@@ -364,8 +364,10 @@ class PickBook:
                     mv_t = 10 if stale_book else (8 if sig["ref_move"] >= 0.01 else (-10 if sig["ref_move"] <= -0.01 else 0))
                     p_t = 8 if p >= 0.6 else 4 if p >= 0.5 else (-8 if p < 0.35 else 0)
                     exact = r["market_type"] not in ("total", "spread", "ah") or bool(r.get("ref_odds"))
+                    hrs = (st - now) / 3600   # cerca del partido la línea de referencia es más precisa
                     conf = (50 + min(20.0, max(0.0, (best["ev"] - 0.04) * 200)) + p_t + 15 * ss + mv_t
                             + (5 if r["confidence"] == "alta" else 0) + pred_t + (3 if exact else 0)
+                            + (3 if hrs <= 4 else (-5 if hrs >= 24 else 0))
                             - 500 * self.mkt_adj.get(r["market_type"], 0.0))
                     cand = {"tier": "A", "book": best["book"], "odds": best["odds"], "ev": best["ev"],
                             "score": score, "stale_book": stale_book, "conf_score": round(min(conf, 100), 1)}
@@ -490,6 +492,11 @@ class PickBook:
 
     # ------------------------------------------------------------------ props de jugadores
     def _update_props(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
+        if db.get_setting("fix_stake_v34") is None:   # una sola vez: los primeros props salieron sin ajuste por nivel
+            for p in existing:
+                if p.get("tier") == "P" and p.get("conf") and p["result"] == "pending" and p["created_at"] < 1795329600:
+                    db.update_nuri_pick(p["id"], stake_pct=round((p.get("stake_pct") or 0.01) * STAKE_MULT[p["conf"]], 4))
+            db.set_setting("fix_stake_v34", "1")
         src = getattr(feed, "props_src", None)
         if src is None or "prop" in self.disabled:
             return
@@ -506,7 +513,9 @@ class PickBook:
             if p.get("market_type") == "prop" and p["result"] == "pending" and not p.get("conf"):
                 c = byid.get(p["id"])
                 sc = c["conf_score"] if c else 55.0
-                db.update_nuri_pick(p["id"], conf=self.level_of(sc), conf_score=sc)
+                lvl = self.level_of(sc)
+                db.update_nuri_pick(p["id"], conf=lvl, conf_score=sc,
+                                    stake_pct=round((p.get("stake_pct") or 0.01) * STAKE_MULT[lvl], 4))
         cands = [c for c in allc if c["p"] >= min_p]
         taken = {p["event_id"] for p in existing if p.get("market_type") == "prop"}
         props_day: dict[str, int] = {}

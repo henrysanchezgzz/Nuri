@@ -247,6 +247,24 @@ def parse_gamelog(js: dict) -> list:
     return games[:20]
 
 
+def usage_trend(games: list, stat: str) -> float | None:
+    """¿Juega más (o le tiran más) últimamente? Minutos en NBA; envíos en receptores; acarreos en corredores.
+    Devuelve la diferencia relativa: últimos 4 contra la temporada."""
+    key = {"pts": "minutes", "reb": "minutes", "ast": "minutes", "3pm": "minutes", "pra": "minutes", "pr": "minutes",
+           "pa": "minutes", "ra": "minutes", "rec": "receivingTargets", "rec_yds": "receivingTargets",
+           "rush_yds": "rushingAttempts", "carries": "rushingAttempts", "rush_rec_yds": "rushingAttempts",
+           "pass_yds": "passingAttempts", "pass_att": "passingAttempts", "pass_cmp": "passingAttempts"}.get(stat)
+    if not key:
+        return None
+    vals = [_f(g.get(key)) for _, g in games]
+    vals = [v for v in vals if v is not None]
+    if len(vals) < 6:
+        return None
+    season = sum(vals) / len(vals)
+    recent = sum(vals[:4]) / 4
+    return (recent - season) / season if season > 0 else None
+
+
 def form_of(games: list, stat: str, line: float, side: str) -> dict | None:
     vals = gl_values(games, stat)
     if len(vals) < 4:
@@ -438,6 +456,15 @@ class PropsSource:
                 z = abs((pr["line"] - (pr["open"] if pr["open"] is not None else pr["line"]))) / prx["sigma"]
                 conf = 40 + (p - MIN_P) * 150 + (6 if h[1] else 0) + (5 if z >= 0.5 else 0) - (5 if st == "questionable" else 0)
                 notes = []
+                # el mercado sigue cargado hacia el mismo lado aun con la línea nueva: muy convencido
+                if cand["kind"] == "move" and pr.get("p_over") is not None:
+                    lean = pr["p_over"] if cand["side"] == "over" else 1 - pr["p_over"]
+                    conf += 5 if lean >= 0.52 else (-4 if lean <= 0.45 else 0)
+                ut = usage_trend(games, pr["stat"]) if games else None
+                if ut is not None and abs(ut) >= 0.08:
+                    conf += 4 if (ut > 0) == (cand["side"] == "over") else -4
+                hrs = (e.get("start_ts", now) - now) / 3600
+                conf += 3 if hrs <= 4 else (-4 if hrs >= 24 else 0)
                 if form and form["n10"] >= 5:
                     hr = form["hr"]
                     conf += 10 if hr >= 0.7 else 5 if hr >= 0.6 else -10 if hr <= 0.4 else 0
