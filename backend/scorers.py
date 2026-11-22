@@ -130,6 +130,18 @@ def fgs_probs(b: dict, lam: float | None) -> dict:
     return {k: 1 - math.exp(-(lam * q / (1 - math.exp(-lam)))) for k, q in q_fair.items()}
 
 
+def consistent(b: dict) -> bool:
+    """¿El 'anota' y el 'primer goleador' de Bet365 que publica ESPN cuadran entre sí? En un mercado sano el
+    primer goleador paga entre ~1.8 y ~4.5 veces lo que paga 'anota' para casi todos. Si no, los datos vienen
+    cruzados o viejos y no se usan (más vale no dar un pick que darlo con datos malos)."""
+    anyt, fgs = b.get("scorers") or {}, b.get("fgs") or {}
+    rs = [fgs[k]["odds"] / anyt[k]["odds"] for k in anyt if k in fgs and anyt[k].get("odds") and fgs[k].get("odds")]
+    if len(rs) < MIN_PLAYERS:
+        return False
+    ok = sum(1 for r in rs if 1.8 <= r <= 4.5)
+    return ok / len(rs) >= 0.8
+
+
 def candidates(feed, now: float) -> list[dict]:
     out = []
     for eid, b in (getattr(feed, "b365", None) or {}).items():
@@ -139,7 +151,7 @@ def candidates(feed, now: float) -> list[dict]:
         if not (20 * 60 <= (e.get("start_ts") or 0) - now <= 30 * 3600):
             continue
         anyt = b.get("scorers") or {}
-        if len(anyt) < MIN_PLAYERS:
+        if len(anyt) < MIN_PLAYERS or not consistent(b):
             continue
         lam = total_lambda(e, b)
         if lam and not (1.2 <= lam <= 4.8):

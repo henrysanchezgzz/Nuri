@@ -7,7 +7,7 @@ Corre solo en la nube: no necesita ninguna computadora prendida.
 
 ## Cómo funciona
 
-Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.py`:
+Cada ~8 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.py` (horario + cadena propia):
 
 1. Baja de ESPN marcadores, líneas de referencia (DraftKings), estadísticas reales y momios reales de Bet365.
 2. Analiza todos los mercados: probabilidad justa de la línea sin comisión (Shin), simulación de 25 mil partidos por
@@ -17,10 +17,14 @@ Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
      sólo cerca de una línea con precio de referencia. Se descarta si la casa alargó el momio sin que el mercado se moviera.
    - **Línea moviéndose:** el mercado se movió 4–12 puntos en las últimas horas (medido por NURI) y las estadísticas
      coinciden; el pick dice desde qué momio conviene.
-   - **Props de jugadores (NBA y NFL):** líneas reales de DraftKings vía ESPN. Si DraftKings acaba de mover la línea de
-     un jugador (lesión, cambio de rol, dinero fuerte), la línea vieja vale más que un volado y las casas mexicanas
-     tardan en copiarla. Se califican con el boxscore oficial.
-   - Máximo 6 al día (4 de props, 2 por liga), 1 por partido y 10 % del banco por día (¼ de Kelly, tope 3 % por pick).
+   - **Props de jugadores (NBA, NFL y NHL):** líneas reales de DraftKings vía ESPN (todas las páginas). Si DraftKings
+     acaba de mover la línea de un jugador (lesión, cambio de rol, dinero fuerte), la línea vieja vale más que un volado
+     y las casas mexicanas tardan en copiarla. Sólo sale si lo que pagaba DraftKings ANTES en esa línea todavía llega
+     al momio mínimo (si no, aunque la encuentres no conviene). NHL con Poisson (conteos bajos). Se califican con el
+     boxscore oficial.
+   - **Goleadores (fútbol):** el "anota" de Bet365 contra su propio primer goleador y contra el "anota" de DraftKings.
+   - Topes: 4 props al día de cualquier nivel y hasta 12 si son Alta o LOCK (8 por liga, 2 por partido), 16 picks al
+     día y 20 % del banco por día (¼ de Kelly, tope 3 % por pick).
 4. A cada pick le da una **confianza de 0 a 100** (Baja, Media, Alta, **LOCK**) con todas sus señales: precio con
    ventaja, movimiento del mercado, estadísticas del partido, el predictor de ESPN y, en props, el historial real del
    jugador partido por partido (aciertos contra la línea, minutos, envíos). LOCK = todas coinciden. La apuesta sugerida
@@ -28,7 +32,9 @@ Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
 5. Califica los picks terminados, mide si le ganó a la línea de cierre (CLV) y se vuelve más exigente si no, también
    por nivel de confianza: si los LOCK no cumplen, cuesta más llegar a LOCK.
 6. Manda cada pick, su resultado y el resumen de los lunes al celular con [ntfy](https://ntfy.sh).
-7. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
+7. **Precio justo:** para cada partido, el momio mínimo que conviene en los mercados principales y por jugador (props
+   y goleadores), para comparar en cualquier casa.
+8. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
    (GitHub Pages). El repositorio es público; los picks sólo se abren con el código.
 
 ## Secretos del repositorio

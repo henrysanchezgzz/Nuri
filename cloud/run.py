@@ -218,11 +218,13 @@ def diagnose(pb, result, feed, ps, now: float) -> dict:
             pf = S.fgs_probs(b, lam)
             dkn = S.dk_names(feed, eid)
             rows = []
+            fg = (b or {}).get("fgs") or {}
             for k, a in sorted(anyt.items(), key=lambda kv: kv[1]["odds"])[:14]:
                 od = S._match(dkn, a["name"]) if dkn else None
-                rows.append([a["name"], a["odds"], od, round(pf[k], 3) if k in pf else None,
-                             round(S.dk_prob(od), 3) if od else None])
-            out["scorers"].append({"game": game(e), "lam": round(lam, 2) if lam else None, "n_dk": len(dkn), "rows": rows})
+                rows.append([a["name"], a["odds"], (fg.get(k) or {}).get("odds"), od,
+                             round(pf[k], 3) if k in pf else None, round(S.dk_prob(od), 3) if od else None])
+            out["scorers"].append({"game": game(e), "lam": round(lam, 2) if lam else None, "n_dk": len(dkn),
+                                   "consistent": S.consistent(b), "rows": rows})
         out["scorer_cands"] = [{k: c.get(k) for k in ("player", "odds", "p", "ev", "rel", "cross", "dk_odds", "conf_score")}
                                for c in S.candidates(feed, now)]
         out["dk_scorer_events"] = {eid: len(v) for eid, v in (getattr(ps, "scorers", {}) or {}).items()}
