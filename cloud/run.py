@@ -112,6 +112,9 @@ async def main() -> None:
     ps = PropsSource(state.get("props"))
     try:
         await ps.refresh(feed)
+        n_gl = await ps.enrich(feed)      # historial partido por partido de los candidatos
+        if n_gl:
+            step(f"[props] historial bajado de {n_gl} jugadores")
     except Exception as exc:
         step(f"[props] {type(exc).__name__}: {exc}")
     feed.props_src = ps

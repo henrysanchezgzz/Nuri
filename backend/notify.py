@@ -106,18 +106,22 @@ class Notifier:
     def pick(self, p: dict, tz) -> None:
         book = {"Caliente.mx": "Caliente"}.get(p.get("book") or "", p.get("book"))
         when = f"{p['home']} vs {p['away']} · {_when(p['start_ts'], tz)}"
+        lvl = {"lock": "LOCK", "alta": "Confianza alta", "media": "Confianza media", "baja": "Confianza baja"}.get(
+            p.get("conf") or "", "")
+        pre = f"{lvl} · " if lvl else ""
         if p["tier"] == "P":
             msg = (f"{p['market_label']}: {p['selection_label']}\n{when}\n"
                    f"Búscala en tu casa: conviene si la línea sigue en {p['line']:g} y paga {p['odds']:.2f} o más "
                    f"({self._stake_word(p)}).")
-            self.queue(f"Prop NURI · {p['league']}", msg, priority=4)
+            self.queue(f"{pre}Prop · {p['league']}", msg, priority=5 if p.get("conf") == "lock" else 4)
             return
         if p["tier"] == "A":
             price = f"{book} la paga {p['odds']:.2f}. Si ya bajó de {p['min_odds']:.2f}, no la tomes."
         else:
             price = f"Búscala en tu casa: conviene si paga {p['odds']:.2f} o más."
         msg = f"{p['selection_label']} · {p['market_label']}\n{when}\n{price} ({self._stake_word(p)})"
-        self.queue(f"Pick NURI · {p['league']}", msg, priority=4 if p["tier"] == "A" else 3)
+        self.queue(f"{pre}{p['league']}", msg,
+                   priority=5 if p.get("conf") == "lock" else (4 if p["tier"] == "A" else 3))
 
     def result(self, p: dict, result: str, units: float, h, a, week_line: str) -> None:
         txt = RES_TXT.get(result, result)

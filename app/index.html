@@ -468,13 +468,24 @@ body.aero .stat,body.aero .upd,body.aero .note{text-shadow:0 0 10px rgba(255,255
 .pk-h{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink-2);font-weight:600}
 .pk-h>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bdg{flex:none;display:inline-flex;align-items:center;height:24px;padding:0 11px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
-.bdg.hi{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
-.bdg.ok{background:color-mix(in srgb,var(--blue) 20%,transparent);color:var(--blue)}
-.bdg.look{background:color-mix(in srgb,var(--amber) 22%,transparent);color:var(--amber)}
+.bdg{gap:5px;letter-spacing:.02em}
+.bdg svg{width:12px;height:12px;stroke-width:2.6}
+.bdg.l-lock{background:linear-gradient(135deg,#ffe08a,#f5a10b);color:#3b2300;box-shadow:0 4px 14px -6px rgba(245,161,11,.9)}
+.bdg.l-alta{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.bdg.l-media{background:color-mix(in srgb,var(--blue) 20%,transparent);color:var(--blue)}
+.bdg.l-baja{background:var(--fill-2);color:var(--ink-2)}
 body.aero .bdg{border:1px solid #fff;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.25)}
-body.aero .bdg.hi{background:var(--lime)}
-body.aero .bdg.ok{background:var(--aqua)}
-body.aero .bdg.look{background:linear-gradient(180deg,#ffe7a3 0%,#ffbf2e 50%,#f5a10b 51%,#ffcd57 100%);color:#5b3a00;text-shadow:none}
+body.aero .bdg.l-lock{background:linear-gradient(180deg,#fff1b8 0%,#ffc93d 50%,#f5a10b 51%,#ffd45e 100%);color:#4a2c00;text-shadow:none}
+body.aero .bdg.l-alta{background:var(--lime)}
+body.aero .bdg.l-media{background:var(--aqua)}
+body.aero .bdg.l-baja{background:linear-gradient(180deg,#f4f8fb,#cfdbe5);color:#46637a;text-shadow:none}
+.pk:has(.bdg.l-lock){box-shadow:0 0 0 2px rgba(245,161,11,.55),0 14px 34px -14px rgba(245,161,11,.6)}
+body.aero .pk:has(.bdg.l-lock){box-shadow:0 0 0 2px #ffc93d,0 14px 34px -14px rgba(245,161,11,.8),inset 0 1px 0 #fff}
+.lvrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px;margin-bottom:12px}
+.lvc{background:var(--card);border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.lvc b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+body.aero .lvc{border:1px solid rgba(255,255,255,.9);box-shadow:0 6px 16px -10px rgba(8,70,120,.45);backdrop-filter:blur(14px)}
+.lvline{display:flex;align-items:center;gap:10px;justify-content:center;margin:2px 0 12px;font-size:13.5px;color:var(--ink-2);font-weight:500;text-align:left}
 .who{margin:12px 0 0}
 .who b{display:block;font-size:17px;font-weight:700}
 .who small{display:block;font-size:13px;color:var(--ink-2);font-weight:500;margin-top:1px}
@@ -633,11 +644,13 @@ function showLock(err){const l=$('#lock');l.classList.remove('hidden');
 /* ================= picks ================= */
 const logo=u=>u?`<img src="${esc(u)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'';
 const isProp=p=>p.market_type==='prop';
-function badge(p){if(p.tier==='A')return p.ev>=0.09?'<span class="bdg hi">Valor alto</span>':'<span class="bdg ok">Buen valor</span>';return '<span class="bdg look">Búscala</span>'}
+const LV={lock:['LOCK','l-lock'],alta:['Alta','l-alta'],media:['Media','l-media'],baja:['Baja','l-baja']},LVR={lock:0,alta:1,media:2,baja:3};
+const lvl=p=>p.conf&&LV[p.conf]?p.conf:(p.tier==='A'?(p.ev>=0.09?'alta':'media'):'media');
+function badge(p){const l=lvl(p);return `<span class="bdg ${LV[l][1]}">${l==='lock'?ic('lock'):''}${LV[l][0]}</span>`}
 function action(p){
   if(p.tier==='A')return `En <b>${esc(p.book||'Bet365')}</b> a <b>${f2(p.odds)}</b>`;
-  if(isProp(p))return `Línea <b>${nn(p.line)}</b> · desde <b>${f2(p.odds)}</b>`;
-  return `En tu casa, desde <b>${f2(p.odds)}</b>`}
+  if(isProp(p))return `Búscala en <b>${nn(p.line)}</b> · desde <b>${f2(p.odds)}</b>`;
+  return `Búscala en tu casa · desde <b>${f2(p.odds)}</b>`}
 function stake(p){const st=Math.max(p.stake_pct||.01,.005);if(prefs.bank>0)return `Apuesta $${Math.round(prefs.bank*st).toLocaleString('es-MX')}`;
   return st<0.012?'Apuesta chica':st<0.022?'Apuesta normal':'Apuesta fuerte'}
 function who(p){return isProp(p)?`<div class="who"><b>${esc(p.market_label)}</b><small>${esc(p.home)} vs ${esc(p.away)}</small></div>`
@@ -650,7 +663,7 @@ function pickCard(p){const lv=p.live&&p.live.status==='live';
    <div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}
    <p class="pk-why">${esc(p.reason||'')}</p></div>`}
-function vPicks(){const n=D.nuri,act=n.active||[];
+function vPicks(){const n=D.nuri,act=[...(n.active||[])].sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
   let h=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
    <b>Ahorita no hay picks con valor</b><p>NURI revisa todo cada 15 minutos: partidos, líneas, props de jugadores y estadísticas. En cuanto aparezca uno bueno, te llega al cel.</p></div>`;
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
@@ -676,6 +689,8 @@ function vRes(){const W=weeks(),w=W[0],all=D.nuri.report.all_time||{};
   const sub=w.settled?(prefs.bank>0?`Vas ${pesos(money(ps))}`:`Vas ${unitsTxt(w.units||0)}`):(w.pending?'Picks por jugarse':'Sin picks todavía');
   let h=`<div class="hero anim"><div class="lbl">Esta semana · ganados y perdidos</div><div class="big">${nn(w.won||0)} – ${nn(w.lost||0)}</div><span class="pill">${esc(sub)}</span></div>
    <div class="card anim"><p class="verdict">${esc(verdict(w,all))}</p></div>`;
+  const L=D.nuri.report.levels||{},lv=['lock','alta','media','baja'].filter(k=>L[k]&&L[k].settled);
+  if(lv.length)h+=`<div class="lvrow anim">${lv.map(k=>`<div class="lvc"><span class="bdg ${LV[k][1]}">${k==='lock'?ic('lock'):''}${LV[k][0]}</span><b>${nn(L[k].won)} – ${nn(L[k].lost)}</b></div>`).join('')}</div>`;
   if(ps.length)h+=`<div class="card anim">${ps.map(row).join('')}</div>`;
   const old=W.slice(1).filter(x=>x.picks);
   if(old.length){h+=`<div class="sec">Semanas anteriores</div><div class="card anim">`;
@@ -689,9 +704,12 @@ function vRes(){const W=weeks(),w=W[0],all=D.nuri.report.all_time||{};
   return h}
 
 /* ================= hojas ================= */
+const LVTXT={lock:'Todas las señales de NURI coinciden. Es lo más fuerte que da.',alta:'Casi todas las señales a favor.',
+  media:'Hay valor, pero con menos señales a favor: apuesta más chica.',baja:'Valor justo y pocas señales: apuesta mínima.'};
 function pickSheet(id){const p=allPicks().find(x=>x.id===id);if(!p)return;const r=RES[p.result]||RES.pending;
   const fin=p.result==='pending'?'':isProp(p)?(p.final_home!=null?`Terminó con ${p.final_home}. `:''):(p.final_home!=null?`Quedó ${p.final_home}-${p.final_away}. `:'');
   openSheet(`<h2>${esc(p.selection_label)}</h2><div class="sub-c">${isProp(p)?esc(p.market_label)+' · ':''}${esc(p.home)} vs ${esc(p.away)}<br>${esc(when(p.start_ts))}</div>
+   <div class="lvline">${badge(p)}<span>${esc(LVTXT[lvl(p)])}</span></div>
    <div class="card pk"><div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}<p class="pk-why">${esc(p.reason||'')}</p></div>
    <p class="note" style="text-align:center">${esc(fin+r[0])}</p>`)}
@@ -701,9 +719,10 @@ function setSheet(){const src=D?Object.entries(D.meta.sources||{}):[];
   <div class="field">Tu banco en pesos (opcional)<input id="bankIn" inputmode="numeric" placeholder="Ej. 2000" value="${prefs.bank||''}"></div>
   <p class="note">Con tu banco, cada pick te dice cuánto apostar y los resultados salen en pesos.</p>
   <div class="ghead">Cómo elige NURI</div><div class="grp howto">
-   <p><b>Valor alto · Buen valor</b>: la casa paga más de lo que vale, comparado contra el mercado sin comisión.</p>
-   <p><b>Búscala</b>: el mercado (o la línea de un jugador) se acaba de mover y las casas mexicanas tardan en copiarlo. Revisa tu casa: sólo conviene si todavía paga lo que dice el pick.</p>
-   <p>Pocos y buenos: se califica sola cada semana y se vuelve más exigente si el mercado le va en contra.</p></div>
+   <p><b>LOCK</b>: todas las señales coinciden: precio con ventaja, el mercado moviéndose a su favor y las estadísticas (o el historial del jugador) respaldándolo. <b>Alta, Media, Baja</b>: menos señales a favor; la apuesta sugerida baja con el nivel.</p>
+   <p><b>En Bet365 a…</b>: la casa paga más de lo que vale, comparado contra el mercado sin comisión.</p>
+   <p><b>Búscala</b>: el mercado (o la línea de un jugador) se acaba de mover y las casas mexicanas tardan en copiarlo. Sólo conviene si tu casa todavía tiene esa línea y ese momio.</p>
+   <p>Se califica sola cada semana y por nivel: si un nivel no cumple, NURI lo vuelve más difícil de alcanzar.</p></div>
   ${src.length?`<div class="ghead">Fuentes · revisado ${D?esc(ago(D.meta.generated)):''}</div><div class="grp">${src.map(([k,v])=>`<div class="kv"><span><i class="dot${v.ok?'':' off'}"></i>${esc(k)}</span></div>`).join('')}</div>`:''}
   <button class="btn sec" id="rfNow">${ic('refresh')} Actualizar ahora</button>
   ${LOCAL?'':`<button class="btn lnk" id="logout">${ic('lock')} Cerrar NURI en este cel</button>`}

@@ -37,6 +37,10 @@ from espn_facts import f_num
 from quant_engine import settle_wl
 
 MX_TZ = timezone(timedelta(hours=-6))  # centro de México / Monterrey (sin horario de verano)
+# Confianza de cada pick (0–100) → nivel. Lock = todas las señales de NURI coinciden.
+LEVELS = (("lock", 80.0), ("alta", 65.0), ("media", 50.0), ("baja", 0.0))
+STAKE_MULT = {"lock": 1.0, "alta": 0.8, "media": 0.6, "baja": 0.4}   # sobre ¼ de Kelly (tope 3 %)
+LEVEL_TXT = {"lock": "LOCK", "alta": "Alta", "media": "Media", "baja": "Baja"}
 PICK_MARKETS = ("1x2", "ml", "dc", "spread", "ah", "total", "btts")
 MT_LABEL = {"1x2": "resultado final", "ml": "ganador", "dc": "doble oportunidad", "spread": "hándicap",
             "ah": "hándicap asiático", "total": "totales", "btts": "ambos anotan"}
@@ -184,7 +188,7 @@ def stats_agreement(d: dict | None, fam: str, row: dict, ml_p: float | None) -> 
 class PickBook:
     BASE = {"ev_sharp": 0.05, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
     CONFIRM_S = int(os.getenv("NURI_CONFIRM_S") or 180)  # debe sostenerse 3 min (dos revisiones de la línea)
-    MAX_PER_DAY = 6
+    MAX_PER_DAY = 8
     MAX_PROPS_DAY = 4        # props de jugadores (líneas viejas que las casas no han copiado)
     MAX_PROPS_LEAGUE_DAY = 2 # y no más de 2 por liga al día (que no se los acabe el primer deporte del día)
     MIN_LEAD_S = 20 * 60     # no emitir si faltan menos de 20 min para empezar
@@ -203,6 +207,7 @@ class PickBook:
         self.hist: dict | None = None   # historial de líneas (lo da la versión en la nube)
         self.mkt_adj: dict[str, float] = {}
         self.disabled: set[str] = set()
+        self.level_adj: dict[str, float] = {}   # si un nivel no cumple, cuesta más llegar a él
         self.notifier = None     # notify.Notifier (avisos al celular), lo pone main.py
         self._cleanup()
         self.recompute_adjust()
@@ -252,6 +257,23 @@ class PickBook:
                 notes.append(f"exige +2 pts en «{MT_LABEL.get(mt, mt)}»")
         if notes:
             self.adj_note = (self.adj_note + " " if self.adj_note else "") + "Por mercado, NURI " + "; ".join(notes) + "."
+        # por nivel de confianza: si los "lock" (o los "alta") no le ganan al cierre, se vuelven más difíciles
+        self.level_adj = {}
+        for lvl, _ in LEVELS[:-1]:
+            ps = [p for p in done if p.get("conf") == lvl][:20]
+            if len(ps) >= 10:
+                clv = sum(p["close_p"] - p["p"] for p in ps) / len(ps)
+                units = sum(p.get("units") or 0 for p in ps)
+                if clv < -0.01 or (clv < 0 and units < 0):
+                    self.level_adj[lvl] = 5.0
+
+    def level_of(self, score: float, cap: str | None = None) -> str:
+        for lvl, th in LEVELS:
+            if score >= th + self.level_adj.get(lvl, 0.0):
+                if cap == "alta" and lvl == "lock":
+                    return "alta"
+                return lvl
+        return "baja"
 
     def thresholds(self) -> dict:
         t = dict(self.BASE)
@@ -338,8 +360,15 @@ class PickBook:
                 if (not suspect and line_ok and need <= best["ev"] <= self.MAX_EV and 0.25 <= p <= 0.85
                         and 1.30 <= best["odds"] <= 5.0 and ss >= -0.15):
                     score = best["ev"] * (1 + 0.5 * ss) * (1.3 if stale_book else 1.0)
+                    pred_t = self._pred_term(d, r, p)
+                    mv_t = 10 if stale_book else (8 if sig["ref_move"] >= 0.01 else (-10 if sig["ref_move"] <= -0.01 else 0))
+                    p_t = 8 if p >= 0.6 else 4 if p >= 0.5 else (-8 if p < 0.35 else 0)
+                    exact = r["market_type"] not in ("total", "spread", "ah") or bool(r.get("ref_odds"))
+                    conf = (50 + min(20.0, max(0.0, (best["ev"] - 0.04) * 200)) + p_t + 15 * ss + mv_t
+                            + (5 if r["confidence"] == "alta" else 0) + pred_t + (3 if exact else 0)
+                            - 500 * self.mkt_adj.get(r["market_type"], 0.0))
                     cand = {"tier": "A", "book": best["book"], "odds": best["odds"], "ev": best["ev"],
-                            "score": score, "stale_book": stale_book}
+                            "score": score, "stale_book": stale_book, "conf_score": round(min(conf, 100), 1)}
             if cand is None and r["confidence"] == "alta" and r.get("move") is not None and sig["span_h"] >= 1.5:
                 # Sólo con el historial propio (≥ 1.5 h): un movimiento que está pasando AHORA es el que las
                 # casas mexicanas todavía no ajustan. El movimiento desde la apertura puede tener días y ya
@@ -355,15 +384,27 @@ class PickBook:
                         and ss >= t["stats_b"] and pred_ok and r.get("min_odds") and r["min_odds"] <= 4.0
                         and r["market_type"] in ("1x2", "ml", "spread", "ah", "total")):
                     o = round(r["min_odds"], 2)
+                    conf = (40 + min(15.0, max(0.0, (mv - 0.04) * 300)) + 15 * ss + self._pred_term(d, r, p)
+                            + (5 if p >= 0.55 else 0))
                     cand = {"tier": "B", "book": None, "odds": o, "ev": r["w"] * (o - 1) - r["l"],
-                            "score": 0.6 * mv * (1 + ss), "recent": sig["span_h"] >= 1.5, "mv": mv}
+                            "score": 0.6 * mv * (1 + ss), "recent": sig["span_h"] >= 1.5, "mv": mv,
+                            "conf_score": round(min(conf, 79.0), 1)}
             if not cand:
                 continue
             cand.update({"row": r, "stats_score": ss, "notes": notes, "league_code": ev_raw.get("_league"),
                          "espn_id": ev_raw.get("_espn_id"), "ev_raw": ev_raw, "sig": sig})
             out.append(cand)
-        out.sort(key=lambda c: (c["tier"] != "A", -c["score"]))
+        out.sort(key=lambda c: (-c["conf_score"], c["tier"] != "A", -c["score"]))
         return out
+
+    @staticmethod
+    def _pred_term(d: dict | None, r: dict, p: float) -> float:
+        """El modelo propio de ESPN (BPI / FPI / predictor) como segunda opinión."""
+        pred = (d or {}).get("predictor")
+        if not pred or r["selection"] not in ("home", "away") or r["market_type"] not in ("1x2", "ml"):
+            return 0.0
+        pp = (pred.get(r["selection"]) or 0) / 100.0
+        return 5.0 if pp >= p - 0.02 else (-8.0 if pp < p - 0.08 else 0.0)
 
     def _reason(self, c: dict) -> str:
         notes = [n for n in c.get("notes") or [] if n][:1]
@@ -378,10 +419,11 @@ class PickBook:
     @staticmethod
     def _prop_reason(c: dict) -> str:
         verb = "subió" if c["side"] == "over" else "bajó"
+        form = f" y {c['notes'][0]}" if c.get("notes") else ""
         if c["kind"] == "move":
-            return (f"DraftKings ya la {verb} a {c['now_line']:g}. Si tu casa sigue en {c['line']:g}, aprovecha: "
+            return (f"DraftKings ya la {verb} a {c['now_line']:g}{form}. Si tu casa sigue en {c['line']:g}, aprovecha: "
                     f"tardan en copiar estos cambios.")
-        return "DraftKings movió fuerte el momio hacia este lado. Si tu casa sigue pagando como antes, aprovecha."
+        return f"DraftKings movió fuerte el momio hacia este lado{form}. Si tu casa sigue pagando como antes, aprovecha."
 
     def update(self, result: dict, feed, now: float) -> None:
         cands = self.candidates(result, feed, now)
@@ -414,7 +456,8 @@ class PickBook:
             lk = (day, r["league"])
             if per_league.get(lk, 0) >= self.MAX_PER_LEAGUE_DAY:
                 continue
-            stake = kelly_pct(c["odds"], r["w"], r["l"])
+            level = self.level_of(c["conf_score"], cap="alta" if c["tier"] == "B" else None)
+            stake = round(kelly_pct(c["odds"], r["w"], r["l"]) * STAKE_MULT[level], 4)
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue
             ev_raw = c["ev_raw"]
@@ -429,8 +472,8 @@ class PickBook:
                 "selection_label": r["selection_label"], "book": c["book"], "odds": c["odds"],
                 "min_odds": round(r["min_odds"], 3) if r.get("min_odds") else None, "p": round(r["p"], 4),
                 "ev": round(c["ev"], 4), "score": round(c["score"], 4), "stats_score": c["stats_score"],
-                "move": r.get("move"), "stake_pct": kelly_pct(c["odds"], r["w"], r["l"]),
-                "reason": self._reason(c),
+                "move": r.get("move"), "stake_pct": stake, "reason": self._reason(c),
+                "conf": level, "conf_score": c["conf_score"],
             }
             if db.add_nuri_pick(rec):
                 taken_events.add(r["event_id"])
@@ -456,7 +499,15 @@ class PickBook:
             st = d.get("_inj_status") or {}
             injuries[eid] = {**st, **{P.norm(k): v for k, v in st.items()}}
         min_p = P.MIN_P + self.mkt_adj.get("prop", 0.0)
-        cands = [c for c in src.candidates(feed, now, injuries) if c["p"] >= min_p]
+        allc = src.candidates(feed, now, injuries, min_p=P.MIN_P - 0.05)
+        # picks que salieron antes de existir los niveles: se les asigna el de hoy
+        byid = {f"{c['event_id']}|prop:{c['stat']}:{c['athlete']}|{c['side']}": c for c in allc}
+        for p in existing:
+            if p.get("market_type") == "prop" and p["result"] == "pending" and not p.get("conf"):
+                c = byid.get(p["id"])
+                sc = c["conf_score"] if c else 55.0
+                db.update_nuri_pick(p["id"], conf=self.level_of(sc), conf_score=sc)
+        cands = [c for c in allc if c["p"] >= min_p]
         taken = {p["event_id"] for p in existing if p.get("market_type") == "prop"}
         props_day: dict[str, int] = {}
         props_lg: dict[tuple, int] = {}
@@ -474,7 +525,8 @@ class PickBook:
                 continue
             if props_lg.get((day, e.get("league")), 0) >= self.MAX_PROPS_LEAGUE_DAY:
                 continue
-            stake = kelly_pct(c["min_odds"], c["p"], 1 - c["p"])
+            level = self.level_of(c.get("conf_score") or 0.0)
+            stake = round(kelly_pct(c["min_odds"], c["p"], 1 - c["p"]) * STAKE_MULT[level], 4)
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue
             side_txt = "Más" if c["side"] == "over" else "Menos"
@@ -490,7 +542,7 @@ class PickBook:
                 "odds": c["min_odds"], "min_odds": c["min_odds"], "p": round(c["p"], 4), "ev": c["ev"],
                 "score": round(c["score"], 4), "stats_score": 0.0,
                 "move": round((c["now_line"] or 0) - (c["open_line"] or 0), 2), "stake_pct": stake,
-                "reason": self._prop_reason(c),
+                "reason": self._prop_reason(c), "conf": level, "conf_score": c.get("conf_score"),
             }
             if db.add_nuri_pick(rec):
                 taken.add(c["event_id"])
@@ -673,7 +725,8 @@ class PickBook:
             item = {k: p[k] for k in ("id", "tier", "league", "sport", "home", "away", "home_logo", "away_logo",
                                      "start_ts", "market_label", "selection_label", "odds", "min_odds", "p", "ev",
                                      "stake_pct", "reason", "result", "units", "final_home", "final_away",
-                                     "created_at", "close_p", "close_odds", "line", "market_type")}
+                                     "created_at", "close_p", "close_odds", "line", "market_type", "conf",
+                                     "conf_score")}
             item["book"] = book_name(p["book"]) if p["book"] else None
             item["clv"] = round(p["close_p"] - p["p"], 4) if p.get("close_p") is not None else None
             e = feed.raw.get(p["event_id"]) if hasattr(feed, "raw") else None
@@ -721,7 +774,10 @@ class PickBook:
         this = next((r for r in rows if r["current"]), None) or {**self._summary([]), "start": cur,
                                                                    "label": week_label(week_start(now)), "current": True}
         total = self._summary(every if every is not None else picks)
-        return {"this_week": this, "weeks": rows[:12], "all_time": total, "verdict": self._verdict(this, total)}
+        allp = every if every is not None else picks
+        levels = {lvl: self._summary([p for p in allp if p.get("conf") == lvl]) for lvl, _ in LEVELS}
+        return {"this_week": this, "weeks": rows[:12], "all_time": total, "verdict": self._verdict(this, total),
+                "levels": levels}
 
     @staticmethod
     def _verdict(w: dict, total: dict) -> str:

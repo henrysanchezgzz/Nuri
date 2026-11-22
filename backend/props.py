@@ -64,6 +64,8 @@ MILESTONES = {"pts": "Points Milestones", "reb": "Rebounds Milestones", "ast": "
               "pass_att": "Passing Attempts Milestones", "carries": "Rushing Attempts Milestones"}
 MS_KEY = {v: k for k, v in MILESTONES.items()}
 
+WEB = "https://site.web.api.espn.com/apis/common/v3/sports"
+GL_KEEP_S = 12 * 3600  # historial de partidos del jugador: se vuelve a bajar cada 12 h
 MIN_P = 0.555          # a un momio normal (≈ 1.87–1.91) tiene que dejar ≥ 5 % de ventaja
 MAX_P = 0.78           # más que esto: casi seguro ya lo sabe todo el mercado (o es otra línea)
 EDGE = 0.05            # ventaja mínima sobre el momio que pedimos
@@ -174,6 +176,90 @@ def parse_props(items: list[dict]) -> dict[str, dict]:
     return out
 
 
+def _split_first(v) -> float | None:
+    if v is None:
+        return None
+    return _f(str(v).split("-")[0]) if "-" in str(v)[1:] else _f(v)
+
+
+def gl_values(games: list, stat: str) -> list[float]:
+    """Valores del jugador en sus partidos (más reciente primero) para una estadística."""
+    out = []
+    for _, g in games:
+        def v(k):
+            return _f(g.get(k))
+        if stat == "pts":
+            x = v("points")
+        elif stat == "reb":
+            x = v("totalRebounds")
+        elif stat == "ast":
+            x = v("assists")
+        elif stat == "3pm":
+            x = _split_first(g.get("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+        elif stat in ("pra", "pr", "pa", "ra"):
+            p_, r_, a_ = v("points"), v("totalRebounds"), v("assists")
+            if None in (p_, r_, a_):
+                x = None
+            else:
+                x = {"pra": p_ + r_ + a_, "pr": p_ + r_, "pa": p_ + a_, "ra": r_ + a_}[stat]
+        elif stat == "pass_yds":
+            x = v("passingYards")
+        elif stat == "pass_cmp":
+            x = v("completions")
+        elif stat == "pass_att":
+            x = v("passingAttempts")
+        elif stat == "rush_yds":
+            x = v("rushingYards")
+        elif stat == "carries":
+            x = v("rushingAttempts")
+        elif stat == "rec_yds":
+            x = v("receivingYards")
+        elif stat == "rec":
+            x = v("receptions")
+        elif stat == "rush_rec_yds":
+            ry, rc = v("rushingYards"), v("receivingYards")
+            x = None if ry is None and rc is None else (ry or 0.0) + (rc or 0.0)
+        else:
+            x = None
+        if x is not None:
+            out.append(x)
+    return out
+
+
+def parse_gamelog(js: dict) -> list:
+    """[[fecha_ts, {estadística: valor}]] de la temporada regular, más reciente primero."""
+    names = js.get("names") or []
+    sts = js.get("seasonTypes") or []
+    st = next((x for x in sts if "regular" in (x.get("displayName") or "").lower()), sts[0] if sts else {})
+    info = js.get("events") or {}
+    games = []
+    for cat in st.get("categories") or []:
+        for ev in cat.get("events") or []:
+            stats = ev.get("stats") or []
+            if not stats:
+                continue
+            row = dict(zip(names, stats))
+            if "minutes" in row and (_f(row.get("minutes")) or 0) <= 0:
+                continue                      # no jugó
+            ts = _ts(((info.get(str(ev.get("eventId"))) or {}).get("gameDate")))
+            games.append([ts, row])
+    games.sort(key=lambda g: -g[0])
+    return games[:20]
+
+
+def form_of(games: list, stat: str, line: float, side: str) -> dict | None:
+    vals = gl_values(games, stat)
+    if len(vals) < 4:
+        return None
+    last = vals[:10]
+    hits = sum(1 for x in last if (x > line if side == "over" else x < line))
+    n = len(vals)
+    mean = sum(vals) / n
+    sd = (sum((x - mean) ** 2 for x in vals) / max(n - 1, 1)) ** 0.5
+    return {"n": n, "n10": len(last), "hits": hits, "hr": hits / len(last), "mean": mean, "sd": sd,
+            "mean5": sum(vals[:5]) / min(5, n)}
+
+
 def price_line(pr: dict, line: float, side: str) -> float:
     """Probabilidad de que el jugador quede del lado `side` de `line`, con el mercado actual de
     DraftKings: la línea actual es la mediana (ajustada por el momio sin comisión si lo hay)."""
@@ -191,13 +277,15 @@ class PropsSource:
         self.rost_ts: dict[str, float] = st.get("rost_ts") or {}   # equipo → última descarga
         self.hist: dict[str, list] = st.get("hist") or {}          # clave → [línea, ts_del_cambio, ts_visto, ts_primera_vez]
         self.props: dict[str, dict] = {}                           # evento → {clave: prop}
+        self.gl: dict[str, dict] = st.get("gl") or {}              # atleta → {"ts", "lg", "games"}
         self.status = {"ok": False, "detail": "sin revisar", "events": 0, "props": 0}
 
     def dump(self) -> dict:
         now = time.time()
         names = {k: v for k, v in self.names.items() if now - (v[2] if len(v) > 2 else now) < 21 * 86400}
         hist = {k: v for k, v in self.hist.items() if now - v[2] < 36 * 3600}
-        return {"names": names, "rost_ts": self.rost_ts, "hist": hist}
+        gl = {k: v for k, v in self.gl.items() if now - v.get("ts", 0) < 3 * 86400}
+        return {"names": names, "rost_ts": self.rost_ts, "hist": hist, "gl": gl}
 
     async def _json(self, client: httpx.AsyncClient, url: str, params: dict | None = None):
         r = await client.get(url, params=params)
@@ -261,11 +349,46 @@ class PropsSource:
         self.status = {"ok": n > 0 or not evs, "detail": f"{n} líneas de jugadores en {len(self.props)} partidos",
                        "events": len(self.props), "props": n, "errors": errs}
 
+    async def enrich(self, feed, now: float | None = None, limit: int = 30) -> int:
+        """Baja el historial partido por partido de los jugadores que podrían ser pick (con caché)."""
+        now = now or time.time()
+        pre = self.candidates(feed, now, None, min_p=MIN_P - 0.04, use_form=False)
+        todo, seen = [], set()
+        for c in pre:
+            a = c["athlete"]
+            if a in seen:
+                continue
+            seen.add(a)
+            g = self.gl.get(a)
+            if not g or now - g.get("ts", 0) > GL_KEEP_S:
+                todo.append((a, (feed.raw.get(c["event_id"]) or {}).get("_league")))
+        todo = todo[:limit]
+        sem = asyncio.Semaphore(6)
+
+        async def one(a, lgc):
+            if lgc not in LEAGUES:
+                return
+            sport, lg = LEAGUES[lgc]
+            async with sem:
+                try:
+                    r = await client.get(f"{WEB}/{sport}/{lg}/athletes/{a}/gamelog")
+                    if r.status_code != 200:
+                        return
+                    self.gl[a] = {"ts": now, "lg": lgc, "games": parse_gamelog(r.json())}
+                except Exception as exc:
+                    print(f"[props] historial {a}: {type(exc).__name__}"[:100])
+
+        if todo:
+            async with httpx.AsyncClient(timeout=15.0, headers=UA, follow_redirects=True) as client:
+                await asyncio.gather(*(one(a, l) for a, l in todo))
+        return len(todo)
+
     def name_of(self, aid: str) -> str | None:
         v = self.names.get(str(aid))
         return v[0] if v else None
 
-    def candidates(self, feed, now: float, injuries: dict | None = None) -> list[dict]:
+    def candidates(self, feed, now: float, injuries: dict | None = None, min_p: float = MIN_P,
+                   use_form: bool = True) -> list[dict]:
         """Props con línea vieja todavía valiosa (o momio que se movió fuerte en la misma línea)."""
         out = []
         for eid, props in self.props.items():
@@ -285,25 +408,48 @@ class PropsSource:
                 # verla, a más tardar cuando la vimos por primera vez (o la hora de ESPN, si es antes)
                 changed_at = h[1] or min(pr["updated"] or now, h[3] if len(h) > 3 else now)
                 fresh = now - changed_at <= FRESH_S
+                games = ((self.gl.get(pr["athlete"]) or {}).get("games")) if use_form else None
+                prx = dict(pr)
+                if games:
+                    vals = gl_values(games, pr["stat"])
+                    if len(vals) >= 5:   # dispersión propia del jugador, encogida hacia la típica
+                        m = sum(vals) / len(vals)
+                        sd = (sum((x - m) ** 2 for x in vals) / (len(vals) - 1)) ** 0.5
+                        prx["sigma"] = max((len(vals) * sd + 6 * pr["sigma"]) / (len(vals) + 6), 0.5)
                 cand = None
                 if pr["open"] is not None and abs(pr["line"] - pr["open"]) >= pr["step"] and fresh:
                     side = "over" if pr["line"] > pr["open"] else "under"
-                    p = price_line(pr, pr["open"], side)
-                    if MIN_P <= p <= MAX_P:
-                        cand = {"kind": "move", "line": pr["open"], "side": side, "p": p}
-                if cand is None and pr.get("p_over") is not None and pr.get("p_over_open") is not None and fresh:
+                    cand = {"kind": "move", "line": pr["open"], "side": side, "p": price_line(prx, pr["open"], side)}
+                elif pr.get("p_over") is not None and pr.get("p_over_open") is not None and fresh:
                     for side, pc, po in (("over", pr["p_over"], pr["p_over_open"]),
                                          ("under", 1 - pr["p_over"], 1 - pr["p_over_open"])):
-                        if pc - po >= 0.06 and MIN_P <= pc <= MAX_P:
+                        if pc - po >= 0.06:
                             cand = {"kind": "price", "line": pr["line"], "side": side, "p": pc}
                 if not cand:
                     continue
+                form = form_of(games, pr["stat"], cand["line"], cand["side"]) if games else None
+                if form and form["n10"] >= 5:   # mezcla con lo que el jugador ha hecho de verdad
+                    p_emp = (form["hits"] + 1) / (form["n10"] + 2)
+                    cand["p"] = 0.75 * cand["p"] + 0.25 * p_emp
+                if not (min_p <= cand["p"] <= MAX_P):
+                    continue
                 p = cand["p"]
                 min_odds = round((1 + EDGE) / p, 2)
+                z = abs((pr["line"] - (pr["open"] if pr["open"] is not None else pr["line"]))) / prx["sigma"]
+                conf = 40 + (p - MIN_P) * 150 + (6 if h[1] else 0) + (5 if z >= 0.5 else 0) - (5 if st == "questionable" else 0)
+                notes = []
+                if form and form["n10"] >= 5:
+                    hr = form["hr"]
+                    conf += 10 if hr >= 0.7 else 5 if hr >= 0.6 else -10 if hr <= 0.4 else 0
+                    good = form["mean"] > cand["line"] if cand["side"] == "over" else form["mean"] < cand["line"]
+                    conf += 4 if good else -6
+                    notes.append(f"la pasó en {form['hits']} de sus últimos {form['n10']}" if cand["side"] == "over"
+                                 else f"se quedó abajo en {form['hits']} de sus últimos {form['n10']}")
                 cand.update({"event_id": eid, "athlete": pr["athlete"], "player": name, "stat": pr["stat"],
                              "label": pr["label"], "now_line": pr["line"], "open_line": pr["open"],
-                             "min_odds": min_odds, "ev": round(p * min_odds - 1, 4),
-                             "score": p - 0.5 + (0.02 if h[1] else 0.0), "ev_raw": e})
+                             "min_odds": min_odds, "ev": round(p * min_odds - 1, 4), "form": form, "notes": notes,
+                             "conf_score": round(min(conf, 100), 1),
+                             "score": p - 0.5 + (0.02 if h[1] else 0.0) + conf / 1000, "ev_raw": e})
                 out.append(cand)
         out.sort(key=lambda c: -c["score"])
         return out

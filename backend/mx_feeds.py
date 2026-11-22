@@ -1694,13 +1694,22 @@ ESPN_LEAGUES = {
     "fra.1": ("football", "soccer", "Ligue 1"),
     "uefa.champions": ("football", "soccer", "Champions League"),
     "usa.1": ("football", "soccer", "MLS"),
+    "eng.2": ("football", "soccer", "Championship"),
+    "sco.1": ("football", "soccer", "Liga de Escocia"),
+    "ned.1": ("football", "soccer", "Eredivisie"),
+    "bra.1": ("football", "soccer", "Brasileirão"),
+    "arg.1": ("football", "soccer", "Liga Argentina"),
+    "bel.1": ("football", "soccer", "Liga de Bélgica"),
     "nba": ("basketball", "basketball", "NBA"),
+    "mens-college-basketball": ("basketball", "basketball", "NCAA Basketball"),
     "nfl": ("americanfootball", "football", "NFL"),
+    "college-football": ("americanfootball", "football", "NCAA Football"),
     "nhl": ("hockey", "hockey", "NHL"),
     "mlb": ("baseball", "baseball", "MLB"),
 }
 LEAGUE_GOALS = {"mex.1": 2.8, "eng.1": 2.9, "esp.1": 2.6, "ita.1": 2.7, "ger.1": 3.1, "fra.1": 2.8,
-                "uefa.champions": 3.0, "usa.1": 3.0}
+                "uefa.champions": 3.0, "usa.1": 3.0, "eng.2": 2.5, "sco.1": 2.8, "ned.1": 3.1, "bra.1": 2.4,
+                "arg.1": 2.2, "bel.1": 2.9}
 PERIODS = {"basketball": (4, 720.0), "americanfootball": (4, 900.0), "hockey": (3, 1200.0)}
 STAT_ES = {
     "possessionPct": ("Posesión", "pct"), "shotsOnTarget": ("Tiros a puerta", None), "totalShots": ("Tiros totales", None),

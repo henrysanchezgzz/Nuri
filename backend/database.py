@@ -124,6 +124,10 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _conn() as con:
         con.executescript(SCHEMA)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(nuri_picks)").fetchall()}
+        for col, typ in (("conf", "TEXT"), ("conf_score", "REAL")):   # nivel de confianza del pick
+            if col not in cols:
+                con.execute(f"ALTER TABLE nuri_picks ADD COLUMN {col} {typ}")
         if con.execute("SELECT 1 FROM settings WHERE key='bankroll_initial'").fetchone() is None:
             con.execute("INSERT INTO settings(key, value) VALUES ('bankroll_initial', '500')")
             con.execute("INSERT INTO settings(key, value) VALUES ('bankroll_set_at', ?)", (str(time.time()),))
@@ -280,7 +284,7 @@ def set_logo(key: str, url: str) -> None:
 PICK_FIELDS = ("id", "created_at", "tier", "event_id", "espn_id", "league_code", "sport", "league", "home", "away",
                "home_logo", "away_logo", "start_ts", "market_key", "market_type", "market_label", "line",
                "selection", "selection_label", "book", "odds", "min_odds", "p", "ev", "score", "stats_score",
-               "move", "stake_pct", "reason")
+               "move", "stake_pct", "reason", "conf", "conf_score")
 
 
 def add_nuri_pick(rec: dict) -> bool:
