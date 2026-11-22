@@ -536,6 +536,19 @@ body.aero .code-in{background:#fff;color:#0b3552;border:1px solid #cfe3f2;box-sh
 body.aero .code-in::placeholder{color:#9db6c9}
 body.aero .lock .lk-t,body.aero .lock .lk-s,body.aero .lock .lk-n{color:#0b3552}
 
+/* precio justo */
+.seg-main button{font-size:14.5px}
+.fg{padding:16px 16px 10px}
+.ft{margin-top:9px;display:grid;gap:5px}
+.ft div{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;min-width:0}
+.ft span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ft img{width:20px;height:20px;object-fit:contain;flex:none}
+.fl{margin-top:10px}
+.fl div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 2px;font-size:14px}
+.fl div+div{border-top:1px solid var(--line)}
+.fl span{color:var(--ink);font-weight:500;min-width:0}
+.fl b{font-weight:800;font-variant-numeric:tabular-nums;flex:none}
+
 </style>
 </head>
 <body class="aero v-inicio">
@@ -548,7 +561,7 @@ body.aero .lock .lk-t,body.aero .lock .lk-s,body.aero .lock .lk-n{color:#0b3552}
     <div class="brand"><img id="logo" src="logo-aero.png" alt=""><b>NURI</b></div>
     <button class="rbtn" id="btnSet" aria-label="Ajustes"></button>
   </header>
-  <div class="seg seg-main" id="seg"><button data-v="picks" class="on">Picks</button><button data-v="res">Resultados</button></div>
+  <div class="seg seg-main" id="seg"><button data-v="picks" class="on">Picks</button><button data-v="fair">Precio justo</button><button data-v="res">Resultados</button></div>
   <p class="stat" id="stat"></p>
   <main id="view"></main>
 </div>
@@ -569,6 +582,7 @@ const P={
  minus:'<line x1="5" y1="12" x2="19" y2="12"/>',clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',lock:'<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
  down:'<polyline points="6 9 12 15 18 9"/>',
+ search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
  refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
 };
 const ic=(k,c='i')=>`<svg class="${c}" viewBox="0 0 24 24">${P[k]||''}</svg>`;
@@ -578,7 +592,7 @@ let prefs=Object.assign({theme:'aero',bank:0},LS.get('nuri-prefs',{}));
 const savePrefs=()=>LS.set('nuri-prefs',prefs);
 const LOCAL=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 let code=LS.get('nuri-code',''),D=null,lastIv=null,waiting=false,busy=false,openWeek=null;
-let view=location.hash.slice(1)==='resultados'?'res':'picks';
+let view={resultados:'res',justo:'fair'}[location.hash.slice(1)]||'picks',fq='';
 
 /* ================= tiempo (Monterrey, UTC−6) ================= */
 const MX=-6*3600,now=()=>Date.now()/1000;
@@ -676,6 +690,19 @@ function vPicks(){const n=D.nuri,t=now();
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
   return h}
 
+/* ================= precio justo ================= */
+function vFair(){return `<div class="search">${ic('search')}<input id="fq" placeholder="Busca tu partido o liga" value="${esc(fq)}" enterkeyhint="search" autocomplete="off"></div>
+  <div id="flist">${fairList()}</div>`}
+function fairList(){const q=fq.trim().toLowerCase(),t=now();
+  const L=(D.fair||[]).filter(g=>g.start_ts>t&&(!q||`${g.home} ${g.away} ${g.league}`.toLowerCase().includes(q)));
+  if(!L.length)return `<div class="card empty">${(D.fair||[]).length?'No encontré ese partido.':'Todavía no hay partidos con línea de mercado.'}</div>`;
+  let h='',day=null;
+  for(const g of L){const k=dayKey(g.start_ts);if(k!==day){h+=`<div class="dayh">${esc(when(g.start_ts).split(' · ')[0])}</div>`;day=k}
+    h+=`<div class="card fg anim"><div class="pk-h"><span>${esc(g.league)} · ${hm(g.start_ts)}</span></div>
+     <div class="ft"><div>${logo(g.home_logo)}<span>${esc(g.home)}</span></div><div>${logo(g.away_logo)}<span>${esc(g.away)}</span></div></div>
+     <div class="fl">${g.sels.map(s=>`<div><span>${esc(s.s)}</span><b>${f2(s.o)}</b></div>`).join('')}</div></div>`}
+  return h}
+
 /* ================= resultados ================= */
 const RES={won:['Ganó','check','var(--accent)'],half_won:['Ganó la mitad','check','var(--accent)'],lost:['Perdió','x','var(--red)'],
   half_lost:['Perdió la mitad','x','var(--red)'],push:['Se devolvió','minus','var(--muted)'],void:['Anulada','minus','var(--muted)'],pending:['Por jugarse','clock','var(--blue)']};
@@ -755,16 +782,19 @@ function fitBounce(){const pb=parseFloat(getComputedStyle(SC).paddingBottom)||0,
 new ResizeObserver(fitBounce).observe($('#view'));addEventListener('resize',fitBounce);
 function applyTheme(){const t=prefs.theme in HTMLBG?prefs.theme:'aero';document.documentElement.style.background=HTMLBG[t];
   const tc=$('meta[name=theme-color]');if(tc)tc.content=HTMLBG[t];
-  document.body.className=(t==='light'?'light ':t==='aero'?'aero ':'')+(view==='res'?'v-ahorro':'v-inicio');
-  const bg=t==='aero'?'bg-aero':view==='res'?'bg-ahorro':'bg-inicio';$$('.bgs>div').forEach(d=>d.classList.toggle('on',d.classList.contains(bg)));
+  document.body.className=(t==='light'?'light ':t==='aero'?'aero ':'')+(view==='res'?'v-ahorro':view==='fair'?'v-movs':'v-inicio');
+  const bg=t==='aero'?'bg-aero':view==='res'?'bg-ahorro':view==='fair'?'bg-dark':'bg-inicio';$$('.bgs>div').forEach(d=>d.classList.toggle('on',d.classList.contains(bg)));
   $('#logo').src=logoSrc()}
 function setView(v){if(v===view)return;view=v;$$('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  history.replaceState(null,'',v==='res'?'#resultados':'#picks');applyTheme();SC.scrollTop=0;render(true)}
-function status(){$('#stat').textContent=D?(view==='picks'?`Revisado ${ago(D.meta.generated)} · te avisa al cel`:'Se califica sola con los marcadores oficiales'):''}
+  history.replaceState(null,'',{res:'#resultados',fair:'#justo'}[v]||'#picks');applyTheme();SC.scrollTop=0;render(true)}
+function status(){$('#stat').textContent=D?(view==='picks'?`Revisado ${ago(D.meta.generated)} · te avisa al cel`:view==='fair'?'Si tu casa paga este momio o más, conviene':'Se califica sola con los marcadores oficiales'):''}
 function render(anim){status();const v=$('#view');
   if(!D){v.innerHTML=waiting?`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('clock')}</div><b>Casi listo</b><p>NURI está haciendo su primera revisión en la nube. En unos minutos verás aquí tus picks.</p></div>`:'<p class="upd">Abriendo tus picks…</p>';return}
-  v.innerHTML=view==='res'?vRes():vPicks();
-  if(!anim)$$('.anim',v).forEach(e=>e.classList.remove('anim'));fitBounce()}
+  const keepQ=document.activeElement&&document.activeElement.id==='fq';
+  v.innerHTML=view==='res'?vRes():view==='fair'?vFair():vPicks();
+  if(!anim)$$('.anim',v).forEach(e=>e.classList.remove('anim'));
+  const q=$('#fq');if(q){q.oninput=()=>{fq=q.value;$('#flist').innerHTML=fairList()};if(keepQ){q.focus();q.setSelectionRange(q.value.length,q.value.length)}}
+  fitBounce()}
 $('#view').addEventListener('click',e=>{const t=e.target.closest('[data-pick],[data-wk]');if(!t)return;
   if(t.dataset.wk){const s=+t.dataset.wk;openWeek=openWeek===s?null:s;render();return}
   pickSheet(t.dataset.pick)});

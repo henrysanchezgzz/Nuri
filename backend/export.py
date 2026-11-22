@@ -120,6 +120,7 @@ def build_data(pb, result: dict, feed, now: float, version: str, sources: dict |
                       "odds": q["odds"], "p": round(r["p"], 3), "ev": round(q["ev"], 4), "conf": r.get("confidence"),
                       "line": r.get("line"), "type": r.get("market_type"), "ref": r.get("ref_odds")})
     watch.sort(key=lambda w: -w["ev"])
+    fair = fair_sheet(rows, feed, now)
     return {
         "v": 2,
         "meta": {
@@ -132,7 +133,48 @@ def build_data(pb, result: dict, feed, now: float, version: str, sources: dict |
         },
         "nuri": view,
         "watch": watch[:25],
+        "fair": fair,
     }
+
+
+def fair_sheet(rows: dict, feed, now: float, horizon_h: float = 36) -> list[dict]:
+    """Precio justo de cada partido: el momio mínimo que conviene (con 3 % de colchón) en los mercados
+    principales, sacado de la línea de mercado sin comisión. Si tu casa paga eso o más, conviene."""
+    by_ev: dict[str, list] = {}
+    for r in rows.values():
+        if r.get("status") != "pre" or r.get("confidence") != "alta":
+            continue
+        if not (now + 15 * 60 <= (r.get("start_ts") or 0) <= now + horizon_h * 3600):
+            continue
+        if r.get("market_type") not in ("1x2", "ml", "total", "spread", "ah", "btts"):
+            continue
+        by_ev.setdefault(r["event_id"], []).append(r)
+    out = []
+    order = {"1x2": 0, "ml": 0, "spread": 1, "ah": 1, "total": 2, "btts": 3}
+    for eid, rs in by_ev.items():
+        ev = (getattr(feed, "raw", {}) or {}).get(eid) or {}
+        keep = [r for r in rs if r["market_type"] in ("1x2", "ml", "btts")]
+        for t in ("total", "spread", "ah"):    # de totales y hándicaps sólo la línea principal (la más pareja)
+            lines = [r for r in rs if r["market_type"] == t and r.get("ref_odds")]
+            if lines:
+                main = min(lines, key=lambda r: abs(r["p"] - 0.5))
+                keep += [r for r in rs if r["market_type"] == t and r.get("line") == main.get("line")]
+        sels = []
+        sel_order = {"home": 0, "draw": 1, "away": 2, "over": 0, "under": 1, "yes": 0, "no": 1}
+        for r in sorted(keep, key=lambda r: (order.get(r["market_type"], 9), sel_order.get(r.get("selection"), 5))):
+            w, l = r.get("w") or r["p"], r.get("l") if r.get("l") is not None else (1 - r["p"])
+            if w <= 0.02:
+                continue
+            desde = 1 + (l + 0.03) / w           # gana w·(o−1) − l ≥ 3 %: colchón por si el mercado se equivoca un poco
+            if 1.05 <= desde <= 15:
+                sels.append({"s": r["selection_label"], "o": round(desde + 0.004, 2)})
+        if sels:
+            out.append({"id": eid, "league": ev.get("league") or rs[0].get("league"),
+                        "home": (ev.get("home") or {}).get("name"), "away": (ev.get("away") or {}).get("name"),
+                        "home_logo": (ev.get("home") or {}).get("logo"), "away_logo": (ev.get("away") or {}).get("logo"),
+                        "start_ts": ev.get("start_ts") or rs[0].get("start_ts"), "sels": sels[:8]})
+    out.sort(key=lambda x: x["start_ts"] or 0)
+    return out[:160]
 
 
 def now_ts() -> float:
