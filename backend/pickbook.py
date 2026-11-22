@@ -497,6 +497,12 @@ class PickBook:
                 if p.get("tier") == "P" and p.get("conf") and p["result"] == "pending" and p["created_at"] < 1795329600:
                     db.update_nuri_pick(p["id"], stake_pct=round((p.get("stake_pct") or 0.01) * STAKE_MULT[p["conf"]], 4))
             db.set_setting("fix_stake_v34", "1")
+        if db.get_setting("fix_stake_v34b") is None:  # deshace el doble ajuste de los props creados ya con niveles
+            for p in existing:
+                if (p.get("tier") == "P" and p.get("conf") and p["result"] == "pending"
+                        and 1795328400 <= p["created_at"] < 1795329600):
+                    db.update_nuri_pick(p["id"], stake_pct=round((p.get("stake_pct") or 0.01) / STAKE_MULT[p["conf"]], 4))
+            db.set_setting("fix_stake_v34b", "1")
         src = getattr(feed, "props_src", None)
         if src is None or "prop" in self.disabled:
             return
