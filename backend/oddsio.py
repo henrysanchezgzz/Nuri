@@ -210,12 +210,21 @@ class OddsIoSource:
                 self.status["remaining"] = int(float(rem))
             except ValueError:
                 pass
+        if r.status_code in (401, 403):
+            why = ""
+            try:   # lo que contesta odds-api.io (sin la clave, por si la repitiera)
+                js = r.json()
+                why = str((js.get("message") or js.get("error") or js.get("detail") or "") if isinstance(js, dict) else js)
+            except Exception:
+                why = r.text or ""
+            why = why.replace(self.key, "***").strip()[:140]
+            self.status["api_msg"] = why
         if r.status_code == 401:
-            self.status.update(ok=False, error="clave", detail="la clave no es válida o se canceló el plan")
+            self.status.update(ok=False, error="clave", detail="odds-api.io rechazó la clave" + (f": {why}" if why else ""))
             self.backoff_until = time.time() + 600
             raise RuntimeError("401")
         if r.status_code == 403:
-            self.status.update(ok=False, error="plan", detail="tu plan no incluye esa casa o ese dato")
+            self.status.update(ok=False, error="plan", detail="tu plan no incluye esa casa o ese dato" + (f": {why}" if why else ""))
             raise RuntimeError("403")
         if r.status_code == 429:
             wait = _num(r.headers.get("Retry-After")) or 60
@@ -392,9 +401,13 @@ class OddsIoSource:
         return s
 
     # ------------------------------------------------------------------ nube (una pasada por corrida, con presupuesto)
+    def fingerprint(self) -> str:
+        import hashlib
+        return hashlib.sha256(self.key.encode()).hexdigest()[:10]
+
     def dump(self) -> dict:
         now = time.time()
-        return {"books": self.books, "last_books": self.last_books,
+        return {"key_fp": self.fingerprint(), "books": self.books, "last_books": self.last_books,
                 "events": {k: v for k, v in self.events.items() if v.get("ts", 0) > now - 4 * 3600},
                 "match": self.match, "last_events": self.last_events,
                 "last_odds": {k: v for k, v in self.last_odds.items() if now - v < 86400},
@@ -405,6 +418,9 @@ class OddsIoSource:
 
     def load(self, st: dict) -> None:
         st = st or {}
+        if st.get("key_fp") and st["key_fp"] != self.fingerprint():
+            # clave nueva: se olvida la espera, el error y las casas de la clave anterior (el catálogo sí sirve)
+            st = {k: v for k, v in st.items() if k in ("events", "match", "last_events", "quotes", "calls")}
         self.books = list(st.get("books") or [])
         self.last_books = float(st.get("last_books") or 0)
         self.events = dict(st.get("events") or {})
