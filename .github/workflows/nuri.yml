@@ -65,6 +65,7 @@ jobs:
           rm -rf _site && mkdir _site
           cp -r app/. _site/
           if [ -f _out/probe.json ]; then cp _out/probe.json _site/; fi
+          if [ -f _out/diag.enc ]; then cp _out/diag.enc _site/; fi
           # si esta corrida falló, se vuelve a publicar lo anterior: nunca se pierde el historial
           if [ -f _out/state.enc ]; then cp _out/state.enc _site/; elif [ -f state.enc ]; then cp state.enc _site/; fi
           if [ -f _out/data.enc ]; then cp _out/data.enc _site/; elif [ -f prev_data.enc ]; then cp prev_data.enc _site/data.enc; fi

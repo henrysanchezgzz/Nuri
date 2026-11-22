@@ -170,6 +170,11 @@ async def main() -> None:
             await notifier.flush(client)
         step(f"[avisos] enviados {notifier.sent} · pendientes {len(notifier.dump())}")
 
+    try:   # diagnóstico cifrado (sólo para revisar el motor; la app no lo usa)
+        (OUT / "diag.enc").write_text(encrypt_json(diagnose(pb, result, feed, ps, now), CODE))
+    except Exception as exc:
+        step(f"[diag] {type(exc).__name__}: {exc}")
+
     data = build_data(pb, result, feed, now, APP_VERSION, feed.sources(), next_minutes=15)
     (OUT / "data.enc").write_text(encrypt_json(data, CODE))
     keep = {k: v for k, v in pb.seen.items() if now - v < 6 * 3600}
@@ -177,6 +182,35 @@ async def main() -> None:
                                    "props": ps.dump(), "last_run": now, "version": APP_VERSION})
     STATUS["ok"] = True
     step(f"[listo] {time.time() - t0:.1f} s · datos {len((OUT / 'data.enc').read_text()) // 1024} KB")
+
+
+def diagnose(pb, result, feed, ps, now: float) -> dict:
+    """Qué vio el motor en esta corrida: candidatos de props, de momio real / línea movida y lo ya emitido."""
+    import database as db
+    def game(e):
+        return f"{(e.get('home') or {}).get('name')} vs {(e.get('away') or {}).get('name')}"
+    out: dict = {"ts": now, "props": [], "cands": [], "picks": []}
+    for c in ps.candidates(feed, now, {}, min_p=0.50)[:80]:
+        e = c["ev_raw"]
+        out["props"].append({"lg": e.get("league"), "game": game(e), "eid": c["event_id"], "player": c["player"],
+                             "stat": c["label"], "side": c["side"], "line": c["line"], "now": c["now_line"],
+                             "open": c["open_line"], "kind": c["kind"], "p": round(c["p"], 3),
+                             "conf": c["conf_score"], "min_odds": c["min_odds"],
+                             "start_h": round((e.get("start_ts", now) - now) / 3600, 1),
+                             "form": (c.get("form") or {}).get("hr")})
+    for c in pb.candidates(result, feed, now)[:60]:
+        r, e = c["row"], c["ev_raw"]
+        out["cands"].append({"tier": c["tier"], "lg": r.get("league"), "game": game(e), "eid": r.get("event_id"),
+                             "mkt": r.get("market_label"), "sel": r.get("selection_label"), "p": round(r["p"], 3),
+                             "ev": round(c.get("ev") or 0, 4), "odds": c.get("odds"), "book": c.get("book"),
+                             "conf": c.get("conf_score"), "mv": round(c.get("mv") or 0, 3),
+                             "start_h": round((r.get("start_ts", now) - now) / 3600, 1),
+                             "seen_min": round((now - pb.seen.get(r["id"], now)) / 60, 1)})
+    for p in db.list_nuri_picks(since_ts=now - 3 * 86400):
+        out["picks"].append({k: p.get(k) for k in ("id", "tier", "league", "market_label", "selection_label", "conf",
+                                                    "conf_score", "stake_pct", "result", "start_ts", "created_at",
+                                                    "odds", "min_odds", "close_p", "p")})
+    return out
 
 
 if __name__ == "__main__":
