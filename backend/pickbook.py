@@ -293,6 +293,11 @@ class PickBook:
         t = self.thresholds()
         rows = result.get("rows_index") or {}
         out = []
+        # líneas que tienen precio de referencia propio (no extrapoladas por el modelo)
+        ref_lines: dict[tuple, list] = {}
+        for r in rows.values():
+            if r.get("ref_odds") and r["market_type"] in ("total", "spread", "ah") and r.get("line") is not None:
+                ref_lines.setdefault((r["event_id"], r["market_type"]), []).append(float(r["line"]))
         for rid, r in rows.items():
             if r["status"] != "pre" or r["market_type"] not in PICK_MARKETS:
                 continue
@@ -321,7 +326,14 @@ class PickBook:
                 # la casa alargó nuestro momio sin que el mercado se moviera: suele saber algo (alineación,
                 # lesión) que la línea de referencia aún no refleja. Esa "ventaja" es falsa.
                 suspect = sig["book_move"] <= -0.02 and abs(sig["ref_move"]) < 0.01
-                if (not suspect and need <= best["ev"] <= self.MAX_EV and 0.25 <= p <= 0.85
+                # Totales y hándicaps: la línea de la casa debe estar a ≤ 0.25 de una línea con precio de
+                # referencia. Más lejos, la probabilidad sale de extrapolar el modelo y el error pesa más.
+                line_ok = True
+                if r["market_type"] in ("total", "spread", "ah") and not r.get("ref_odds"):
+                    lines = ref_lines.get((r["event_id"], r["market_type"])) or []
+                    line_ok = bool(lines) and r.get("line") is not None and \
+                        min(abs(float(r["line"]) - L) for L in lines) <= 0.25
+                if (not suspect and line_ok and need <= best["ev"] <= self.MAX_EV and 0.25 <= p <= 0.85
                         and 1.30 <= best["odds"] <= 5.0 and ss >= -0.15):
                     score = best["ev"] * (1 + 0.5 * ss) * (1.3 if stale_book else 1.0)
                     cand = {"tier": "A", "book": best["book"], "odds": best["odds"], "ev": best["ev"],

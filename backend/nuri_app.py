@@ -9,6 +9,8 @@ Lanzador de escritorio. Lo abre el ícono "NURI" del escritorio con pythonw.exe
   3. Arranca el servidor en segundo plano y abre NURI como ventana de app
      (Brave → Chrome → Edge → navegador predeterminado).
 El servidor se apaga solo cuando cierras la ventana y pasan unos minutos sin uso.
+
+Desde la 3.2 NURI corre solo en la nube: este lanzador sólo abre la app (GitHub Pages).
 """
 from __future__ import annotations
 
@@ -51,6 +53,10 @@ from version import APP_VERSION  # noqa: E402
 
 PORT = int(os.getenv("NURI_APP_PORT") or 8765)
 URL = f"http://127.0.0.1:{PORT}"
+# NURI ya corre solo en la nube (GitHub Actions) y la app vive en GitHub Pages: el ícono de la laptop
+# sólo abre esa app. Con NURI_LOCAL=1 en .env vuelve el modo viejo (servidor y motor en esta laptop).
+CLOUD_URL = os.getenv("NURI_CLOUD_URL") or "https://henrysanchezgzz.github.io/Nuri/"
+LOCAL_MODE = (os.getenv("NURI_LOCAL") or "").strip().lower() in ("1", "si", "sí", "true", "yes")
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 DETACHED = 0x00000008 if os.name == "nt" else 0
 
@@ -91,16 +97,16 @@ def find_browser() -> str | None:
     return None
 
 
-def open_window() -> None:
+def open_window(url: str = URL, size: str = "1360,900") -> None:
     b = find_browser()
     if b:
         try:
-            subprocess.Popen([b, f"--app={URL}", "--window-size=1360,900"], creationflags=DETACHED | NO_WINDOW,
+            subprocess.Popen([b, f"--app={url}", f"--window-size={size}"], creationflags=DETACHED | NO_WINDOW,
                              close_fds=True)
             return
         except Exception as exc:
             print(f"[NURI] no se pudo abrir {b}: {exc!r}")
-    webbrowser.open(URL)
+    webbrowser.open(url)
 
 
 QUIET = "--quiet" in sys.argv  # reinicio por actualización: la ventana ya está abierta
@@ -169,6 +175,14 @@ def ensure_autostart() -> None:
 
 def main() -> None:
     print(f"\n[NURI] {time.strftime('%Y-%m-%d %H:%M:%S')} · lanzador v{APP_VERSION} · {URL}")
+    if not LOCAL_MODE:
+        # modo nube: apaga el servidor local si sigue prendido y abre la app de la nube
+        if health():
+            print("[NURI] NURI ya corre en la nube: apagando el servidor local")
+            shutdown_running()
+        if not QUIET:
+            open_window(CLOUD_URL, "460,940")
+        return
     threading.Thread(target=ensure_shortcuts, daemon=True).start()
     threading.Thread(target=ensure_autostart, daemon=True).start()
     h = health()
