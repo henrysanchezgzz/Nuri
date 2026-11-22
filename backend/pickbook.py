@@ -200,6 +200,9 @@ class PickBook:
     MAX_PER_LEAGUE_DAY = 2   # no amontonar picks de una misma liga (resultados correlacionados)
     MAX_PER_LEAGUE_DAY_STRONG = 4
     MAX_STAKE_DAY = 0.20     # nunca más del 20 % del banco en juego por día (cada pick va a ¼ de Kelly)
+    # Picks de "búscala" (línea vieja que tu casa todavía no copia): APAGADOS. En la práctica las casas mexicanas
+    # copian a DraftKings casi al mismo tiempo, así que llegaban tarde. Sólo salen picks con momio real.
+    CONDITIONAL = os.getenv("NURI_CONDITIONAL", "0") == "1"
 
     def __init__(self) -> None:
         self.seen: dict[str, float] = {}
@@ -438,7 +441,12 @@ class PickBook:
         return (t.hour == 0 and t.minute >= 30) or 1 <= t.hour < 7
 
     def update(self, result: dict, feed, now: float) -> None:
-        cands = self.candidates(result, feed, now)
+        if not self.CONDITIONAL and db.get_setting("retire_conditional_v38") is None:
+            for p in db.pending_nuri_picks():   # una sola vez: se retiran los "búscala" que seguían activos
+                if p.get("tier") in ("B", "P"):
+                    db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
+            db.set_setting("retire_conditional_v38", "1")
+        cands = [c for c in self.candidates(result, feed, now) if self.CONDITIONAL or c["tier"] != "B"]
         alive = {c["row"]["id"] for c in cands}
         for k in [k for k in self.seen if k not in alive and "|scorer:" not in k]:
             self.seen.pop(k, None)
@@ -604,7 +612,7 @@ class PickBook:
                     db.update_nuri_pick(p["id"], stake_pct=round((p.get("stake_pct") or 0.01) / STAKE_MULT[p["conf"]], 4))
             db.set_setting("fix_stake_v34b", "1")
         src = getattr(feed, "props_src", None)
-        if src is None or "prop" in self.disabled:
+        if src is None or "prop" in self.disabled or not self.CONDITIONAL:
             return
         if self.quiet(now):
             self._track_close_props(feed, now)

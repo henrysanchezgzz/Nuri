@@ -691,7 +691,8 @@ function vPicks(){const n=D.nuri,t=now();
   // los de "búscala" valen mientras tu casa no copie la línea: después de 3 h probablemente ya cambió
   const old=all.filter(p=>cond(p)&&p.created_at&&t-p.created_at>3*3600),act=all.filter(p=>!old.includes(p));
   let h=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
-   <b>Ahorita no hay picks nuevos con valor</b><p>NURI revisa todo cada pocos minutos: partidos de 20 ligas, momios de Bet365, goleadores, líneas y props de jugadores. En cuanto aparezca uno bueno, te llega al cel.</p></div>`;
+   <b>Ahorita ningún momio real le gana al precio justo</b><p>NURI sólo te manda picks que puedes tomar ya, con el momio real de la casa. Revisa todo cada pocos minutos y te avisa al cel. Mientras, en Precio justo ves el momio mínimo que conviene de cada partido y jugador.</p>
+   <button class="btn sec" id="toFair" style="margin-top:16px">Ver precio justo</button></div>`;
   if(old.length)h+=`<div class="sec">Pueden haber cambiado</div><div class="card anim">${old.map(row).join('')}</div>
    <p class="upd">Son de "búscala" y salieron hace más de 3 horas: revisa que tu casa todavía tenga esa línea.</p>`;
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
@@ -816,6 +817,7 @@ function render(anim){status();const v=$('#view');
   const keepQ=document.activeElement&&document.activeElement.id==='fq';
   v.innerHTML=view==='res'?vRes():view==='fair'?vFair():vPicks();
   if(!anim)$$('.anim',v).forEach(e=>e.classList.remove('anim'));
+  const tf=$('#toFair');if(tf)tf.onclick=()=>setView('fair');
   const q=$('#fq');if(q){q.oninput=()=>{fq=q.value;$('#flist').innerHTML=fairList()};if(keepQ){q.focus();q.setSelectionRange(q.value.length,q.value.length)}}
   fitBounce()}
 $('#view').addEventListener('click',e=>{const t=e.target.closest('[data-pick],[data-wk]');if(!t)return;

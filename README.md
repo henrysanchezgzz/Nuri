@@ -15,6 +15,8 @@ Cada ~8 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
 3. Sólo emite un pick si la ventaja se sostiene en dos revisiones seguidas y pasa todos los filtros:
    - **Momio real:** la casa paga más de lo justo (5 % o más; más en empates, BTTS y momios altos). Totales y hándicaps
      sólo cerca de una línea con precio de referencia. Se descarta si la casa alargó el momio sin que el mercado se moviera.
+   - **Picks de "búscala" (apagados):** las dos reglas siguientes daban la línea vieja de DraftKings para buscarla en tu
+     casa, pero las casas mexicanas la copian casi al mismo tiempo y llegaban tarde. Sólo salen con `NURI_CONDITIONAL=1`.
    - **Línea moviéndose:** el mercado se movió 4–12 puntos en las últimas horas (medido por NURI) y las estadísticas
      coinciden; el pick dice desde qué momio conviene.
    - **Props de jugadores (NBA, NFL y NHL):** líneas reales de DraftKings vía ESPN (todas las páginas). Si DraftKings

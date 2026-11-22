@@ -305,11 +305,11 @@ def update_nuri_pick(pick_id: str, **fields) -> None:
 
 def list_nuri_picks(since_ts: float | None = None) -> list[dict]:
     with _conn() as con:
-        if since_ts is None:
-            rows = con.execute("SELECT * FROM nuri_picks ORDER BY start_ts DESC").fetchall()
+        if since_ts is None:   # 'retired' = picks de "búscala" retirados: no cuentan ni se muestran
+            rows = con.execute("SELECT * FROM nuri_picks WHERE result != 'retired' ORDER BY start_ts DESC").fetchall()
         else:
-            rows = con.execute("SELECT * FROM nuri_picks WHERE start_ts >= ? ORDER BY start_ts DESC",
-                               (since_ts,)).fetchall()
+            rows = con.execute("SELECT * FROM nuri_picks WHERE start_ts >= ? AND result != 'retired' "
+                               "ORDER BY start_ts DESC", (since_ts,)).fetchall()
         return [dict(r) for r in rows]
 
 

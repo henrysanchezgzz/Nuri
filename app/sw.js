@@ -1,5 +1,5 @@
 // NURI: permite abrir la app sin internet (con los últimos datos). Cambia VERSION al actualizar la app.
-const VERSION = 'nuri-v7';
+const VERSION = 'nuri-v8';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './logo-aero.png', './logo-dark.png', './logo-light.png', './favicon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
