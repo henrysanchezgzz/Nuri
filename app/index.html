@@ -643,7 +643,7 @@ function showLock(err){const l=$('#lock');l.classList.remove('hidden');
 
 /* ================= picks ================= */
 const logo=u=>u?`<img src="${esc(u)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'';
-const isProp=p=>p.market_type==='prop';
+const isProp=p=>p.market_type==='prop',isPlayer=p=>p.market_type==='prop'||p.market_type==='scorer';
 const LV={lock:['LOCK','l-lock'],alta:['Alta','l-alta'],media:['Media','l-media'],baja:['Baja','l-baja']},LVR={lock:0,alta:1,media:2,baja:3};
 const lvl=p=>p.conf&&LV[p.conf]?p.conf:(p.tier==='A'?(p.ev>=0.09?'alta':'media'):'media');
 function badge(p){const l=lvl(p);return `<span class="bdg ${LV[l][1]}">${l==='lock'?ic('lock'):''}${LV[l][0]}</span>`}
@@ -653,19 +653,26 @@ function action(p){
   return `Búscala en tu casa · desde <b>${f2(p.odds)}</b>`}
 function stake(p){const st=Math.max(p.stake_pct||.01,.005);if(prefs.bank>0)return `Apuesta $${Math.round(prefs.bank*st).toLocaleString('es-MX')}`;
   return st<0.012?'Apuesta chica':st<0.022?'Apuesta normal':'Apuesta fuerte'}
-function who(p){return isProp(p)?`<div class="who"><b>${esc(p.market_label)}</b><small>${esc(p.home)} vs ${esc(p.away)}</small></div>`
+function who(p){return isPlayer(p)?`<div class="who"><b>${esc(p.market_label)}</b><small>${esc(p.home)} vs ${esc(p.away)}</small></div>`
   :`<div class="who teams">${logo(p.home_logo)}<span>${esc(p.home)}</span><i>vs</i><span>${esc(p.away)}</span>${logo(p.away_logo)}</div>`}
+const cond=p=>p.tier!=='A';
 function pickCard(p){const lv=p.live&&p.live.status==='live';
+  const age=cond(p)&&p.created_at?` · salió ${esc(ago(p.created_at))}`:'';
   return `<div class="card pk anim" data-pick="${esc(p.id)}">
-   <div class="pk-h"><span>${esc(p.league)} · ${lv?'<span class="live">En vivo</span>':esc(when(p.start_ts))}</span>${badge(p)}</div>
+   <div class="pk-h"><span>${esc(p.league)} · ${lv?'<span class="live">En vivo</span>':esc(when(p.start_ts))}${age}</span>${badge(p)}</div>
    ${who(p)}
    <div class="pk-bet">${esc(p.selection_label)}</div>
    <div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}
    <p class="pk-why">${esc(p.reason||'')}</p></div>`}
-function vPicks(){const n=D.nuri,act=[...(n.active||[])].sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
+function vPicks(){const n=D.nuri,t=now();
+  const all=[...(n.active||[])].sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
+  // los de "búscala" valen mientras tu casa no copie la línea: después de 3 h probablemente ya cambió
+  const old=all.filter(p=>cond(p)&&p.created_at&&t-p.created_at>3*3600),act=all.filter(p=>!old.includes(p));
   let h=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
-   <b>Ahorita no hay picks con valor</b><p>NURI revisa todo cada 15 minutos: partidos, líneas, props de jugadores y estadísticas. En cuanto aparezca uno bueno, te llega al cel.</p></div>`;
+   <b>Ahorita no hay picks nuevos con valor</b><p>NURI revisa todo cada pocos minutos: partidos de 20 ligas, momios de Bet365, goleadores, líneas y props de jugadores. En cuanto aparezca uno bueno, te llega al cel.</p></div>`;
+  if(old.length)h+=`<div class="sec">Pueden haber cambiado</div><div class="card anim">${old.map(row).join('')}</div>
+   <p class="upd">Son de "búscala" y salieron hace más de 3 horas: revisa que tu casa todavía tenga esa línea.</p>`;
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
   return h}
 
@@ -675,7 +682,7 @@ const RES={won:['Ganó','check','var(--accent)'],half_won:['Ganó la mitad','che
 const allPicks=()=>D?[...(D.nuri.active||[]),...(D.nuri.history||[])]:[];
 function money(ps){let s=0;for(const p of ps)if(p.result!=='pending')s+=(p.units||0)*Math.max(p.stake_pct||.01,.005)*prefs.bank;return s}
 function row(p){const r=RES[p.result]||RES.pending,pend=p.result==='pending';
-  const sub=isProp(p)?`${esc(p.market_label)} · ${esc(p.league)}`:`${esc(p.home)} vs ${esc(p.away)}`;
+  const sub=isPlayer(p)?`${esc(p.market_label)} · ${esc(p.league)}`:`${esc(p.home)} vs ${esc(p.away)}`;
   return `<div class="row" data-pick="${esc(p.id)}"><div class="ico" style="--c:${r[2]}">${ic(r[1])}</div>
    <div class="info"><b>${esc(p.selection_label)}</b><small>${sub}</small></div><div class="rt"><small class="${p.units>0?'in':p.units<0?'over':''}">${pend?esc(when(p.start_ts)):r[0]}</small></div></div>`}
 function verdict(w,all){if(!w.settled)return w.pending?'Todavía no termina ningún pick de esta semana.':'Esta semana todavía no hay picks: ninguno ha pasado el filtro.';
@@ -708,7 +715,7 @@ const LVTXT={lock:'Todas las señales de NURI coinciden. Es lo más fuerte que d
   media:'Hay valor, pero con menos señales a favor: apuesta más chica.',baja:'Valor justo y pocas señales: apuesta mínima.'};
 function pickSheet(id){const p=allPicks().find(x=>x.id===id);if(!p)return;const r=RES[p.result]||RES.pending;
   const fin=p.result==='pending'?'':isProp(p)?(p.final_home!=null?`Terminó con ${p.final_home}. `:''):(p.final_home!=null?`Quedó ${p.final_home}-${p.final_away}. `:'');
-  openSheet(`<h2>${esc(p.selection_label)}</h2><div class="sub-c">${isProp(p)?esc(p.market_label)+' · ':''}${esc(p.home)} vs ${esc(p.away)}<br>${esc(when(p.start_ts))}</div>
+  openSheet(`<h2>${esc(p.selection_label)}</h2><div class="sub-c">${isPlayer(p)?esc(p.market_label)+' · ':''}${esc(p.home)} vs ${esc(p.away)}<br>${esc(when(p.start_ts))}</div>
    <div class="lvline">${badge(p)}<span>${esc(LVTXT[lvl(p)])}</span></div>
    <div class="card pk"><div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}<p class="pk-why">${esc(p.reason||'')}</p></div>

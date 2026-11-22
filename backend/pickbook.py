@@ -186,7 +186,7 @@ def stats_agreement(d: dict | None, fam: str, row: dict, ml_p: float | None) -> 
 
 
 class PickBook:
-    BASE = {"ev_sharp": 0.05, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
+    BASE = {"ev_sharp": 0.035, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
     CONFIRM_S = int(os.getenv("NURI_CONFIRM_S") or 180)  # debe sostenerse 3 min (dos revisiones de la línea)
     MAX_PER_DAY = 8
     MAX_PROPS_DAY = 4        # props de jugadores (líneas viejas que las casas no han copiado)
@@ -427,10 +427,17 @@ class PickBook:
                     f"tardan en copiar estos cambios.")
         return f"DraftKings movió fuerte el momio hacia este lado{form}. Si tu casa sigue pagando como antes, aprovecha."
 
+    @staticmethod
+    def quiet(now: float) -> bool:
+        """De 00:30 a 07:00 (Monterrey) no salen picks de "búscala": la línea vieja dura poco y a esa hora
+        nadie la alcanza. Los de momio real sí salen."""
+        t = datetime.fromtimestamp(now, MX_TZ)
+        return (t.hour == 0 and t.minute >= 30) or 1 <= t.hour < 7
+
     def update(self, result: dict, feed, now: float) -> None:
         cands = self.candidates(result, feed, now)
         alive = {c["row"]["id"] for c in cands}
-        for k in [k for k in self.seen if k not in alive]:
+        for k in [k for k in self.seen if k not in alive and "|scorer:" not in k]:
             self.seen.pop(k, None)
         existing = db.list_nuri_picks(since_ts=now - 10 * 86400)
         taken_events = {p["event_id"] for p in existing}
@@ -447,7 +454,7 @@ class PickBook:
             r = c["row"]
             rid = r["id"]
             self.seen.setdefault(rid, now)
-            if r["event_id"] in taken_events:
+            if r["event_id"] in taken_events or (c["tier"] == "B" and self.quiet(now)):
                 continue
             if now - self.seen[rid] < self.CONFIRM_S:
                 confirming += 1
@@ -487,8 +494,94 @@ class PickBook:
                 print(f"[picks] nuevo pick {c['tier']} · {rec['league']} · {rec['home']} vs {rec['away']} · "
                       f"{rec['selection_label']} @ {rec['odds']}")
         self.confirming = confirming
+        self._update_scorers(feed, now, existing, per_day, stake_day)
         self._update_props(feed, now, existing, per_day, stake_day)
         self._track_close(result, feed, now)
+
+    # ------------------------------------------------------------------ goleadores con momio real de Bet365
+    MAX_SCORERS_DAY = 3
+
+    def _update_scorers(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
+        if "scorer" in self.disabled:
+            return
+        import scorers as S
+        try:
+            cands = S.candidates(feed, now)
+        except Exception as exc:
+            print(f"[picks] goleadores: {exc!r}")
+            return
+        alive = {f"{c['event_id']}|scorer:{c['key'].replace(' ', '_')}|yes" for c in cands}
+        for k in [k for k in self.seen if "|scorer:" in k and k not in alive]:
+            self.seen.pop(k, None)
+        taken = {p["event_id"] for p in existing if p.get("market_type") == "scorer"}
+        sc_day: dict[str, int] = {}
+        for p in existing:
+            if p.get("market_type") == "scorer":
+                d_ = datetime.fromtimestamp(p["start_ts"] or now, MX_TZ).date().isoformat()
+                sc_day[d_] = sc_day.get(d_, 0) + 1
+        for c in cands:
+            e = c["ev_raw"]
+            pid = f"{c['event_id']}|scorer:{c['key'].replace(' ', '_')}|yes"
+            first = self.seen.setdefault(pid, now)          # se tiene que sostener en dos revisiones
+            if now - first < self.CONFIRM_S or c["event_id"] in taken:
+                continue
+            day = datetime.fromtimestamp(e["start_ts"], MX_TZ).date().isoformat()
+            if sc_day.get(day, 0) >= self.MAX_SCORERS_DAY or per_day.get(day, 0) >= self.MAX_PER_DAY:
+                continue
+            level = self.level_of(c["conf_score"], cap="alta")
+            stake = round(kelly_pct(c["odds"], c["p"], 1 - c["p"]) * STAKE_MULT[level], 4)
+            if stake <= 0 or stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
+                continue
+            rec = {
+                "id": pid, "created_at": now, "tier": "A", "event_id": c["event_id"], "espn_id": e.get("_espn_id"),
+                "league_code": e.get("_league"), "sport": e.get("sport"), "league": e.get("league"),
+                "home": (e.get("home") or {}).get("name"), "away": (e.get("away") or {}).get("name"),
+                "home_logo": (e.get("home") or {}).get("logo"), "away_logo": (e.get("away") or {}).get("logo"),
+                "start_ts": e.get("start_ts"), "market_key": f"scorer:{c['key'].replace(' ', '_')}",
+                "market_type": "scorer", "market_label": c["player"], "line": None, "selection": "yes",
+                "selection_label": "Anota en el partido", "book": "Bet365", "odds": c["odds"],
+                "min_odds": round(1.02 / c["p"], 2), "p": c["p"], "ev": c["ev"], "score": c["conf_score"] / 100,
+                "stats_score": 0.0, "move": None, "stake_pct": stake,
+                "reason": ("Bet365 lo paga más alto de lo que vale: con los goles que se esperan en el partido y "
+                           "lo que la misma Bet365 le da como primer goleador, debería pagar menos."),
+                "conf": level, "conf_score": c["conf_score"],
+            }
+            if db.add_nuri_pick(rec):
+                taken.add(c["event_id"])
+                sc_day[day] = sc_day.get(day, 0) + 1
+                per_day[day] = per_day.get(day, 0) + 1
+                stake_day[day] = stake_day.get(day, 0.0) + stake
+                if self.notifier:
+                    self.notifier.pick(rec, MX_TZ)
+                print(f"[picks] nuevo goleador · {rec['league']} · {c['player']} @ {c['odds']}")
+
+    async def _settle_scorer(self, feed, p: dict, now: float) -> int:
+        box = getattr(feed, "fetch_box", None)
+        if box is None:
+            return 0
+        import scorers as S
+        try:
+            state, js = await box(p.get("espn_id") or p["event_id"].replace("espn-", ""), p.get("league_code"))
+        except Exception as exc:
+            print(f"[picks] no pude revisar {p['id']}: {exc!r}")
+            return 0
+        if state == "void":
+            res = ("void", 0.0)
+        elif state != "final" or not js:
+            return 0
+        else:
+            res = S.grade(p, js)
+            if res is None:
+                return 0
+        result, units = res
+        db.update_nuri_pick(p["id"], result=result, units=units, settled_at=now)
+        print(f"[picks] calificado {p['id']}: {result} ({units:+.2f} u)")
+        if self.notifier:
+            wk = week_start(p["start_ts"] or now).timestamp()
+            same = [x for x in db.list_nuri_picks(since_ts=wk) if week_start(x["start_ts"] or now).timestamp() == wk]
+            sm = self._summary(same)
+            self.notifier.result(p, result, units, None, None, f"Semana: {sm['won']:g}-{sm['lost']:g} · {sm['units']:+.2f} u")
+        return 1
 
     # ------------------------------------------------------------------ props de jugadores
     def _update_props(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
@@ -505,6 +598,9 @@ class PickBook:
             db.set_setting("fix_stake_v34b", "1")
         src = getattr(feed, "props_src", None)
         if src is None or "prop" in self.disabled:
+            return
+        if self.quiet(now):
+            self._track_close_props(feed, now)
             return
         import props as P
         injuries = {}
@@ -653,6 +749,9 @@ class PickBook:
                 continue
             if p.get("market_type") == "prop":
                 n += await self._settle_prop(feed, p, now)
+                continue
+            if p.get("market_type") == "scorer":
+                n += await self._settle_scorer(feed, p, now)
                 continue
             try:
                 res = await fetch(p.get("espn_id") or p["event_id"].replace("espn-", ""), p.get("league_code"))

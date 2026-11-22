@@ -125,6 +125,10 @@ class Notifier:
 
     def result(self, p: dict, result: str, units: float, h, a, week_line: str) -> None:
         txt = RES_TXT.get(result, result)
+        if p.get("market_type") == "scorer":
+            msg = f"{p['market_label']}: {p['selection_label']}\n{txt}: {units:+.2f} u\n{week_line}"
+            self.queue(f"{txt} · {p['market_label']}", msg, priority=2)
+            return
         if p.get("market_type") == "prop":
             fin = f"Terminó con {h:g}" if isinstance(h, (int, float)) else "Sin estadística (no jugó)"
             msg = f"{p['market_label']}: {p['selection_label']}\n{fin} · {txt}: {units:+.2f} u\n{week_line}"

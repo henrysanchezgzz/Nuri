@@ -532,6 +532,13 @@ def parse_bet365(js: dict, home_id: str, away_id: str, live: bool = False) -> di
                 scorers[norm_person(nm)] = {"name": nm, "odds": round(v, 3)}
         if scorers:
             out["scorers"] = scorers
+        fgs = {}
+        for p in (bo.get("playerOdds") or {}).get(pre + "FirstGoalScorer") or []:
+            nm, v = p.get("player"), frac_to_decimal(p.get("value"))
+            if nm and v and 1.5 < v < 501:
+                fgs[norm_person(nm)] = {"name": nm, "odds": round(v, 3)}
+        if fgs:
+            out["fgs"] = fgs
         return out if len(out) > 1 else None
     return None
 

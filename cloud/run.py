@@ -153,6 +153,12 @@ async def main() -> None:
     else:
         step("[avisos] sin NTFY_TOPIC: no se mandan avisos al celular")
 
+    try:
+        import scorers as S
+        b_ev = [eid for eid, b in (feed.b365 or {}).items() if (b or {}).get("fgs") and (b or {}).get("scorers")]
+        step(f"[goleadores] partidos con primer goleador y anota de Bet365: {len(b_ev)} · candidatos {len(S.candidates(feed, now))}")
+    except Exception as exc:
+        step(f"[goleadores] {type(exc).__name__}")
     pb.update(result, feed, now)
     settled = await pb.settle(feed, now)
     pb.weekly_check(now)

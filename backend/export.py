@@ -111,7 +111,7 @@ def build_data(pb, result: dict, feed, now: float, version: str, sources: dict |
         if r.get("market_type") not in ("1x2", "ml", "dc", "spread", "ah", "total", "btts") or not r.get("quotes"):
             continue
         q = r["quotes"][0]
-        if q.get("ev") is None or q["ev"] < 0.0 or r.get("start_ts", 0) <= now + 20 * 60:
+        if q.get("ev") is None or q["ev"] < -0.06 or r.get("start_ts", 0) <= now + 20 * 60:
             continue
         ev = (getattr(feed, "raw", {}) or {}).get(r["event_id"]) or {}
         watch.append({"league": r.get("league"), "home": (ev.get("home") or {}).get("name"),
