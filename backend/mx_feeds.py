@@ -1961,10 +1961,7 @@ class EspnFeed:
         if not league_code or league_code not in ESPN_LEAGUES:
             return None
         fam, path, _ = ESPN_LEAGUES[league_code]
-        async with httpx.AsyncClient(timeout=12.0, headers={"User-Agent": USER_AGENTS[0]}) as client:
-            r = await client.get(f"{ESPN_BASE}/{path}/{league_code}/summary", params={"event": espn_id})
-            r.raise_for_status()
-            js = r.json()
+        js = await self._summary_json(espn_id, league_code)
         comp = (((js.get("header") or {}).get("competitions")) or [{}])[0] or {}
         st = (comp.get("status") or {}).get("type") or {}
         name = (st.get("name") or "").upper()
@@ -1987,6 +1984,27 @@ class EspnFeed:
             if ("AET" in name or "PEN" in name or len(lh) > 2) and len(lh) >= 2 and len(la) >= 2:
                 reg = (int(sum(lh[:2])), int(sum(la[:2])))
         return {"state": "final", "home": int(sc["home"][0]), "away": int(sc["away"][0]), "reg": reg}
+
+    async def _summary_json(self, espn_id: str, league_code: str) -> dict:
+        fam, path, _ = ESPN_LEAGUES[league_code]
+        async with httpx.AsyncClient(timeout=12.0, headers={"User-Agent": USER_AGENTS[0]}) as client:
+            r = await client.get(f"{ESPN_BASE}/{path}/{league_code}/summary", params={"event": espn_id})
+            r.raise_for_status()
+            return r.json()
+
+    async def fetch_box(self, espn_id: str, league_code: str | None) -> tuple[str | None, dict | None]:
+        """Boxscore oficial (para calificar props de jugadores): (estado, resumen completo)."""
+        if not league_code or league_code not in ESPN_LEAGUES:
+            return None, None
+        js = await self._summary_json(espn_id, league_code)
+        comp = (((js.get("header") or {}).get("competitions")) or [{}])[0] or {}
+        st = (comp.get("status") or {}).get("type") or {}
+        name = (st.get("name") or "").upper()
+        if any(x in name for x in ("POSTPONED", "CANCELED", "CANCELLED", "ABANDONED", "FORFEIT", "SUSPENDED")):
+            return "void", js
+        if st.get("state") == "post" or st.get("completed"):
+            return "final", js
+        return st.get("state") or "pre", js
 
     # ------------------------------------------------------------------ una sola pasada (versión en la nube)
     async def run_once(self, days: int = 3, summary_hours: float = 36, concurrency: int = 8) -> dict:

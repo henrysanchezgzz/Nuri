@@ -107,6 +107,19 @@ async def main() -> None:
     step(f"[ESPN] {stats['events']} partidos · {stats['summaries']} resúmenes · {stats['ok']} ok / {stats['err']} errores")
     STATUS["espn"] = stats
 
+    # Props de jugadores: líneas reales de DraftKings (NBA y NFL) y nombres de las plantillas
+    from props import PropsSource
+    ps = PropsSource(state.get("props"))
+    try:
+        await ps.refresh(feed)
+    except Exception as exc:
+        step(f"[props] {type(exc).__name__}: {exc}")
+    feed.props_src = ps
+    feed.src["Props de jugadores · DraftKings"] = {"ok": ps.status["ok"], "detail": ps.status["detail"],
+                                                   "last": time.time()}
+    step(f"[props] {ps.status['detail']}")
+    STATUS["props"] = {k: ps.status.get(k) for k in ("events", "props", "errors")}
+
     # Caliente / Codere (opcional): una pasada del cliente de odds-api.io
     if os.getenv("ODDSIO_KEY"):
         src = feed.configure_oddsio(os.getenv("ODDSIO_KEY"))
@@ -140,7 +153,8 @@ async def main() -> None:
     pb.update(result, feed, now)
     settled = await pb.settle(feed, now)
     pb.weekly_check(now)
-    step(f"[picks] activos {len(db.pending_nuri_picks())} · calificados ahora {settled} · confirmando {pb.confirming}")
+    step(f"[picks] activos {len(db.pending_nuri_picks())} · calificados ahora {settled} · confirmando {pb.confirming}"
+         f" · props candidatos {len(ps.candidates(feed, now))}")
 
     if notifier:
         async with httpx.AsyncClient(timeout=12.0) as client:
@@ -151,7 +165,7 @@ async def main() -> None:
     (OUT / "data.enc").write_text(encrypt_json(data, CODE))
     keep = {k: v for k, v in pb.seen.items() if now - v < 6 * 3600}
     save_state(OUT / "state.enc", {"hist": pb.hist, "seen": keep, "outbox": notifier.dump() if notifier else [],
-                                   "last_run": now, "version": APP_VERSION})
+                                   "props": ps.dump(), "last_run": now, "version": APP_VERSION})
     STATUS["ok"] = True
     step(f"[listo] {time.time() - t0:.1f} s · datos {len((OUT / 'data.enc').read_text()) // 1024} KB")
 

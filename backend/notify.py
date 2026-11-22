@@ -98,22 +98,34 @@ class Notifier:
                 "error": self.last_error, "last_ok": self.last_ok}
 
     # ------------------------------------------------------------------ mensajes
+    @staticmethod
+    def _stake_word(p: dict) -> str:
+        st = p.get("stake_pct") or 0.01
+        return "apuesta chica" if st < 0.012 else ("apuesta normal" if st < 0.022 else "apuesta fuerte")
+
     def pick(self, p: dict, tz) -> None:
         book = {"Caliente.mx": "Caliente"}.get(p.get("book") or "", p.get("book"))
+        when = f"{p['home']} vs {p['away']} · {_when(p['start_ts'], tz)}"
+        if p["tier"] == "P":
+            msg = (f"{p['market_label']}: {p['selection_label']}\n{when}\n"
+                   f"Búscala en tu casa: conviene si la línea sigue en {p['line']:g} y paga {p['odds']:.2f} o más "
+                   f"({self._stake_word(p)}).")
+            self.queue(f"Prop NURI · {p['league']}", msg, priority=4)
+            return
         if p["tier"] == "A":
-            price = (f"{book} paga {p['odds']:.2f} · ventaja {p['ev'] * 100:+.1f} %\n"
-                     f"Si ya bajó de {p['min_odds']:.2f}, no la tomes")
+            price = f"{book} la paga {p['odds']:.2f}. Si ya bajó de {p['min_odds']:.2f}, no la tomes."
         else:
-            price = f"Tómala sólo si tu casa paga {p['odds']:.2f} o más (ventaja {p['ev'] * 100:+.1f} %)"
-        msg = (f"{p['selection_label']} · {p['market_label']}\n"
-               f"{p['home']} vs {p['away']} · {_when(p['start_ts'], tz)}\n"
-               f"{price}\n"
-               f"Probabilidad {p['p'] * 100:.0f} % · apuesta {max(p.get('stake_pct') or 0.01, 0.005) * 100:.1f} % de tu banco")
-        title = f"Pick NURI · {p['league']}" + (" · momio real" if p["tier"] == "A" else "")
-        self.queue(title, msg, priority=4 if p["tier"] == "A" else 3)
+            price = f"Búscala en tu casa: conviene si paga {p['odds']:.2f} o más."
+        msg = f"{p['selection_label']} · {p['market_label']}\n{when}\n{price} ({self._stake_word(p)})"
+        self.queue(f"Pick NURI · {p['league']}", msg, priority=4 if p["tier"] == "A" else 3)
 
-    def result(self, p: dict, result: str, units: float, h: int, a: int, week_line: str) -> None:
+    def result(self, p: dict, result: str, units: float, h, a, week_line: str) -> None:
         txt = RES_TXT.get(result, result)
+        if p.get("market_type") == "prop":
+            fin = f"Terminó con {h:g}" if isinstance(h, (int, float)) else "Sin estadística (no jugó)"
+            msg = f"{p['market_label']}: {p['selection_label']}\n{fin} · {txt}: {units:+.2f} u\n{week_line}"
+            self.queue(f"{txt} · {p['market_label']}", msg, priority=2)
+            return
         msg = (f"{p['home']} {h}–{a} {p['away']}\n"
                f"{txt}: {units:+.2f} u\n{week_line}")
         self.queue(f"{txt} · {p['selection_label']}", msg, priority=2)

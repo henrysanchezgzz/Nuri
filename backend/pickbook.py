@@ -184,7 +184,8 @@ def stats_agreement(d: dict | None, fam: str, row: dict, ml_p: float | None) -> 
 class PickBook:
     BASE = {"ev_sharp": 0.05, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
     CONFIRM_S = int(os.getenv("NURI_CONFIRM_S") or 180)  # debe sostenerse 3 min (dos revisiones de la línea)
-    MAX_PER_DAY = 5
+    MAX_PER_DAY = 6
+    MAX_PROPS_DAY = 3        # props de jugadores (líneas viejas que las casas no han copiado)
     MIN_LEAD_S = 20 * 60     # no emitir si faltan menos de 20 min para empezar
     HORIZON_S = 48 * 3600    # partidos de las próximas 48 h
     MAX_EV = 0.15            # más que esto casi siempre es un momio viejo o una línea distinta
@@ -364,17 +365,22 @@ class PickBook:
         return out
 
     def _reason(self, c: dict) -> str:
-        r = c["row"]
-        notes = c["notes"]
-        extra = (", y además " + " y ".join(notes)) if notes else ""
+        notes = [n for n in c.get("notes") or [] if n][:1]
+        extra = f", y además {notes[0]}" if notes else ""
         if c["tier"] == "A":
-            lag = (f" El mercado se movió {c['sig']['ref_move'] * 100:.1f} pts a su favor y "
-                   f"{book_name(c['book'])} no ha ajustado.") if c.get("stale_book") else ""
-            return (f"{book_name(c['book'])} paga {c['odds']:.2f} y lo justo es {r['fair']:.2f}: "
-                    f"{c['ev']:+.1%} a tu favor{extra}.{lag}")
-        when = "en las últimas horas" if c.get("recent") else "desde que abrió"
-        return (f"La línea de mercado se movió {c.get('mv', r['move']) * 100:.0f} pts a su favor {when}{extra}. "
-                f"Las casas mexicanas suelen tardar en ajustar.")
+            lag = (f" El mercado ya se movió hacia este lado y {book_name(c['book'])} no ha ajustado."
+                   if c.get("stale_book") else "")
+            return f"{book_name(c['book'])} la paga más alto de lo que vale{extra}.{lag}"
+        return (f"El dinero fuerte movió la línea hacia este lado en las últimas horas{extra}. "
+                f"Si tu casa no ha ajustado, aprovecha.")
+
+    @staticmethod
+    def _prop_reason(c: dict) -> str:
+        verb = "subió" if c["side"] == "over" else "bajó"
+        if c["kind"] == "move":
+            return (f"DraftKings ya la {verb} a {c['now_line']:g}. Si tu casa sigue en {c['line']:g}, aprovecha: "
+                    f"tardan en copiar estos cambios.")
+        return "DraftKings movió fuerte el momio hacia este lado. Si tu casa sigue pagando como antes, aprovecha."
 
     def update(self, result: dict, feed, now: float) -> None:
         cands = self.candidates(result, feed, now)
@@ -435,7 +441,75 @@ class PickBook:
                 print(f"[picks] nuevo pick {c['tier']} · {rec['league']} · {rec['home']} vs {rec['away']} · "
                       f"{rec['selection_label']} @ {rec['odds']}")
         self.confirming = confirming
+        self._update_props(feed, now, existing, per_day, stake_day)
         self._track_close(result, feed, now)
+
+    # ------------------------------------------------------------------ props de jugadores
+    def _update_props(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
+        src = getattr(feed, "props_src", None)
+        if src is None or "prop" in self.disabled:
+            return
+        import props as P
+        injuries = {}
+        for eid, d in (getattr(feed, "dossier", None) or {}).items():
+            st = d.get("_inj_status") or {}
+            injuries[eid] = {**st, **{P.norm(k): v for k, v in st.items()}}
+        min_p = P.MIN_P + self.mkt_adj.get("prop", 0.0)
+        cands = [c for c in src.candidates(feed, now, injuries) if c["p"] >= min_p]
+        taken = {p["event_id"] for p in existing if p.get("market_type") == "prop"}
+        props_day: dict[str, int] = {}
+        for p in existing:
+            if p.get("market_type") == "prop":
+                day = datetime.fromtimestamp(p["start_ts"] or now, MX_TZ).date().isoformat()
+                props_day[day] = props_day.get(day, 0) + 1
+        for c in cands:
+            e = c["ev_raw"]
+            if c["event_id"] in taken:
+                continue
+            day = datetime.fromtimestamp(e["start_ts"], MX_TZ).date().isoformat()
+            if props_day.get(day, 0) >= self.MAX_PROPS_DAY or per_day.get(day, 0) >= self.MAX_PER_DAY:
+                continue
+            stake = kelly_pct(c["min_odds"], c["p"], 1 - c["p"])
+            if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
+                continue
+            side_txt = "Más" if c["side"] == "over" else "Menos"
+            rec = {
+                "id": f"{c['event_id']}|prop:{c['stat']}:{c['athlete']}|{c['side']}", "created_at": now, "tier": "P",
+                "event_id": c["event_id"], "espn_id": e.get("_espn_id"), "league_code": e.get("_league"),
+                "sport": e.get("sport"), "league": e.get("league"), "home": (e.get("home") or {}).get("name"),
+                "away": (e.get("away") or {}).get("name"), "home_logo": (e.get("home") or {}).get("logo"),
+                "away_logo": (e.get("away") or {}).get("logo"), "start_ts": e.get("start_ts"),
+                "market_key": f"prop:{c['stat']}:{c['athlete']}:{c['line']:g}", "market_type": "prop",
+                "market_label": c["player"], "line": c["line"], "selection": c["side"],
+                "selection_label": f"{side_txt} de {c['line']:g} {c['label']}", "book": None,
+                "odds": c["min_odds"], "min_odds": c["min_odds"], "p": round(c["p"], 4), "ev": c["ev"],
+                "score": round(c["score"], 4), "stats_score": 0.0,
+                "move": round((c["now_line"] or 0) - (c["open_line"] or 0), 2), "stake_pct": stake,
+                "reason": self._prop_reason(c),
+            }
+            if db.add_nuri_pick(rec):
+                taken.add(c["event_id"])
+                props_day[day] = props_day.get(day, 0) + 1
+                per_day[day] = per_day.get(day, 0) + 1
+                stake_day[day] = stake_day.get(day, 0.0) + stake
+                if self.notifier:
+                    self.notifier.pick(rec, MX_TZ)
+                print(f"[picks] nuevo prop · {rec['league']} · {c['player']} · {rec['selection_label']} (desde {c['min_odds']})")
+        self._track_close_props(feed, now)
+
+    def _track_close_props(self, feed, now: float) -> None:
+        """Línea de cierre de los props: cuánto vale la línea del pick con el mercado más reciente."""
+        src = getattr(feed, "props_src", None)
+        if src is None:
+            return
+        import props as P
+        for p in db.pending_nuri_picks():
+            if p.get("market_type") != "prop" or (p["start_ts"] or 0) <= now:
+                continue
+            k = P.parse_key(p.get("market_key") or "")
+            pr = (src.props.get(p["event_id"]) or {}).get(f"{k[0]}:{k[1]}") if k else None
+            if pr:
+                db.update_nuri_pick(p["id"], close_p=round(P.price_line(pr, k[2], p["selection"]), 4), close_ts=now)
 
     # ------------------------------------------------------------------ línea de cierre (CLV)
     def _track_close(self, result: dict, feed, now: float) -> None:
@@ -504,6 +578,9 @@ class PickBook:
         for p in db.pending_nuri_picks():
             if (p["start_ts"] or now) > now - 100 * 60:
                 continue
+            if p.get("market_type") == "prop":
+                n += await self._settle_prop(feed, p, now)
+                continue
             try:
                 res = await fetch(p.get("espn_id") or p["event_id"].replace("espn-", ""), p.get("league_code"))
             except Exception as exc:
@@ -532,6 +609,35 @@ class PickBook:
         if n:
             self.recompute_adjust()
         return n
+
+    async def _settle_prop(self, feed, p: dict, now: float) -> int:
+        box = getattr(feed, "fetch_box", None)
+        if box is None:
+            return 0
+        import props as P
+        try:
+            state, js = await box(p.get("espn_id") or p["event_id"].replace("espn-", ""), p.get("league_code"))
+        except Exception as exc:
+            print(f"[picks] no pude revisar {p['id']}: {exc!r}")
+            return 0
+        if state == "void":
+            result, units = "void", 0.0
+        elif state != "final" or not js:
+            return 0
+        else:
+            result, units = P.grade(p, js)
+        k = P.parse_key(p.get("market_key") or "")
+        final = P.stat_from_box(js, p.get("league_code") or "", k[1], k[0]) if (k and js) else None
+        db.update_nuri_pick(p["id"], result=result, units=units, settled_at=now,
+                            final_home=int(final) if final is not None else None, final_away=None)
+        print(f"[picks] calificado {p['id']}: {result} ({units:+.2f} u)")
+        if self.notifier:
+            wk = week_start(p["start_ts"] or now).timestamp()
+            same = [x for x in db.list_nuri_picks(since_ts=wk) if week_start(x["start_ts"] or now).timestamp() == wk]
+            sm = self._summary(same)
+            self.notifier.result(p, result, units, int(final) if final is not None else None, None,
+                                 f"Semana: {sm['won']:g}-{sm['lost']:g} · {sm['units']:+.2f} u")
+        return 1
 
     def weekly_check(self, now: float) -> None:
         """Los lunes desde las 8:00 manda al cel el resumen de la semana que terminó (una sola vez)."""

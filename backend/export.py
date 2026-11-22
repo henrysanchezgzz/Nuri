@@ -103,23 +103,19 @@ def markets_view(result: dict, feed, now: float, horizon_h: float = 36) -> list[
 def build_data(pb, result: dict, feed, now: float, version: str, sources: dict | None = None,
                next_minutes: int | None = None) -> dict:
     view = pb.view(feed, now)
-    issued = {p["id"] for p in view["active"]}
-    feed._issued_ids = issued
-    markets = markets_view(result, feed, now)
     rows = result.get("rows_index") or {}
+    ps = getattr(feed, "props_src", None)
     return {
-        "v": 1,
+        "v": 2,
         "meta": {
             "generated": now, "version": version,
             "events": len({r["event_id"] for r in rows.values()}),
-            "markets": len(rows),
-            "upcoming": sum(1 for m in markets if m["status"] == "pre"),
-            "live": sum(1 for m in markets if m["status"] == "live"),
+            "markets": len(rows) + (ps.status.get("props", 0) if ps else 0),
+            "live": sum(1 for e in (getattr(feed, "raw", {}) or {}).values() if e.get("status") == "live"),
             "next_minutes": next_minutes,
             "sources": {k: {"ok": bool(v.get("ok")), "detail": v.get("detail")} for k, v in (sources or {}).items()},
         },
         "nuri": view,
-        "markets": markets,
     }
 
 
