@@ -17,7 +17,10 @@ Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
      sólo cerca de una línea con precio de referencia. Se descarta si la casa alargó el momio sin que el mercado se moviera.
    - **Línea moviéndose:** el mercado se movió 4–12 puntos en las últimas horas (medido por NURI) y las estadísticas
      coinciden; el pick dice desde qué momio conviene.
-   - Máximo 5 al día, 2 por liga, 1 por partido y 10 % del banco por día (¼ de Kelly, tope 3 % por pick).
+   - **Props de jugadores (NBA y NFL):** líneas reales de DraftKings vía ESPN. Si DraftKings acaba de mover la línea de
+     un jugador (lesión, cambio de rol, dinero fuerte), la línea vieja vale más que un volado y las casas mexicanas
+     tardan en copiarla. Se califican con el boxscore oficial.
+   - Máximo 6 al día (4 de props, 2 por liga), 1 por partido y 10 % del banco por día (¼ de Kelly, tope 3 % por pick).
 4. Califica los picks terminados, mide si le ganó a la línea de cierre (CLV) y se vuelve más exigente si no.
 5. Manda cada pick, su resultado y el resumen de los lunes al celular con [ntfy](https://ntfy.sh).
 6. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
@@ -35,7 +38,7 @@ Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
 
 - `backend/` motor (feeds, modelo, registro de picks). `main.py` es el modo de escritorio viejo.
 - `cloud/` la corrida en la nube y el cifrado.
-- `app/` la app (una sola página, estilo Namufin: Aero, Oscuro y Claro).
+- `app/` la app: Picks y Resultados, con el estilo visual de Namufin (Aero, Oscuro y Claro).
 - `frontend/` la interfaz de escritorio anterior.
 
 En la laptop, el ícono de NURI ya sólo abre la app de la nube (con `NURI_LOCAL=1` en `.env` vuelve el modo local).

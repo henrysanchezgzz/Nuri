@@ -185,7 +185,8 @@ class PickBook:
     BASE = {"ev_sharp": 0.05, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
     CONFIRM_S = int(os.getenv("NURI_CONFIRM_S") or 180)  # debe sostenerse 3 min (dos revisiones de la línea)
     MAX_PER_DAY = 6
-    MAX_PROPS_DAY = 3        # props de jugadores (líneas viejas que las casas no han copiado)
+    MAX_PROPS_DAY = 4        # props de jugadores (líneas viejas que las casas no han copiado)
+    MAX_PROPS_LEAGUE_DAY = 2 # y no más de 2 por liga al día (que no se los acabe el primer deporte del día)
     MIN_LEAD_S = 20 * 60     # no emitir si faltan menos de 20 min para empezar
     HORIZON_S = 48 * 3600    # partidos de las próximas 48 h
     MAX_EV = 0.15            # más que esto casi siempre es un momio viejo o una línea distinta
@@ -458,16 +459,20 @@ class PickBook:
         cands = [c for c in src.candidates(feed, now, injuries) if c["p"] >= min_p]
         taken = {p["event_id"] for p in existing if p.get("market_type") == "prop"}
         props_day: dict[str, int] = {}
+        props_lg: dict[tuple, int] = {}
         for p in existing:
             if p.get("market_type") == "prop":
                 day = datetime.fromtimestamp(p["start_ts"] or now, MX_TZ).date().isoformat()
                 props_day[day] = props_day.get(day, 0) + 1
+                props_lg[(day, p["league"])] = props_lg.get((day, p["league"]), 0) + 1
         for c in cands:
             e = c["ev_raw"]
             if c["event_id"] in taken:
                 continue
             day = datetime.fromtimestamp(e["start_ts"], MX_TZ).date().isoformat()
             if props_day.get(day, 0) >= self.MAX_PROPS_DAY or per_day.get(day, 0) >= self.MAX_PER_DAY:
+                continue
+            if props_lg.get((day, e.get("league")), 0) >= self.MAX_PROPS_LEAGUE_DAY:
                 continue
             stake = kelly_pct(c["min_odds"], c["p"], 1 - c["p"])
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
@@ -490,6 +495,7 @@ class PickBook:
             if db.add_nuri_pick(rec):
                 taken.add(c["event_id"])
                 props_day[day] = props_day.get(day, 0) + 1
+                props_lg[(day, e.get("league"))] = props_lg.get((day, e.get("league")), 0) + 1
                 per_day[day] = per_day.get(day, 0) + 1
                 stake_day[day] = stake_day.get(day, 0.0) + stake
                 if self.notifier:
