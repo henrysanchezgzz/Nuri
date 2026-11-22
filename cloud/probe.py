@@ -1,16 +1,15 @@
 """
-NURI · probe.py — ¿qué más mercado real publica ESPN?
-  1) casas con momio en NFL/NBA/NHL/universitario (¿hay alguna apostable en México además de DraftKings?)
-  2) qué mercados de Bet365 vienen en fútbol (nombres de los campos, no momios)
-  3) dónde hay props de jugadores de DraftKings (NHL, universitario, fútbol)
-Sólo corre si existe cloud/PROBE. Escribe _out/probe.json (sólo conteos y nombres, nada sensible).
+NURI · probe.py — estructura de datos para sumar NHL y goleadores de fútbol de DraftKings.
+  1) NHL: claves del boxscore de un partido terminado y del historial (gamelog) de un jugador
+  2) NHL: cómo vienen los props Más/Menos de DraftKings (tiros, puntos, asistencias)
+  3) Fútbol: cómo vienen 'Anytime Goalscorer' y 'To Score 2+ Goals' de DraftKings y el plantel de ESPN
+Sólo corre si existe cloud/PROBE. Escribe _out/probe.json (sólo estructura y nombres de campos).
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import time
-from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -21,13 +20,7 @@ OUT.mkdir(exist_ok=True)
 UA = {"User-Agent": "Mozilla/5.0 (NURI probe)"}
 SITE = "https://site.api.espn.com/apis/site/v2/sports"
 CORE = "https://sports.core.api.espn.com/v2/sports"
-
-US = [("football", "nfl"), ("basketball", "nba"), ("hockey", "nhl"), ("football", "college-football"),
-      ("basketball", "mens-college-basketball"), ("basketball", "womens-college-basketball")]
-B365 = ["eng.1", "ita.1", "ger.1", "fra.1", "uefa.champions", "eng.2", "sco.1"]
-PROPS = [("hockey", "nhl"), ("football", "college-football"), ("basketball", "mens-college-basketball"),
-         ("soccer", "eng.1"), ("soccer", "esp.1"), ("soccer", "mex.1"), ("soccer", "uefa.champions"),
-         ("soccer", "ita.1"), ("soccer", "ger.1"), ("football", "nfl"), ("basketball", "nba")]
+WEB = "https://site.web.api.espn.com/apis/common/v3/sports"
 
 
 async def get(client, url, params=None):
@@ -38,86 +31,84 @@ async def get(client, url, params=None):
         return 0, str(exc)
 
 
-async def pre_events(client, sp, lg, days=3, cap=4):
-    d = datetime.now(timezone(timedelta(hours=-6)))
-    ids = []
-    for k in range(days):
-        s, j = await get(client, f"{SITE}/{sp}/{lg}/scoreboard", {"dates": (d + timedelta(days=k)).strftime("%Y%m%d"), "limit": 200})
-        for e in (j or {}).get("events") or [] if isinstance(j, dict) else []:
-            if (e.get("status") or {}).get("type", {}).get("state") == "pre":
-                ids.append(e["id"])
-        if len(ids) >= cap:
-            break
-    return ids[:cap]
+def strip(it: dict) -> dict:
+    """Un item de prop sin URLs largas: sólo la forma."""
+    out = {}
+    for k, v in it.items():
+        if k == "athlete":
+            out[k] = (v or {}).get("$ref", "")[-60:]
+        elif isinstance(v, dict):
+            out[k] = {kk: (vv if not isinstance(vv, (dict, list)) else (json.dumps(vv)[:160])) for kk, vv in v.items()}
+        else:
+            out[k] = v if not isinstance(v, list) else json.dumps(v)[:160]
+    return out
 
 
-async def odds_items(client, sp, lg, eid):
-    s, j = await get(client, f"{CORE}/{sp}/leagues/{lg}/events/{eid}/competitions/{eid}/odds", {"limit": 50})
-    return (j or {}).get("items") or [] if isinstance(j, dict) else []
-
-
-async def us_league(client, sp, lg, sem):
-    async with sem:
-        ids = await pre_events(client, sp, lg)
-        provs: Counter = Counter()
-        names: dict = {}
-        keys: dict = {}
-        for eid in ids:
-            for it in await odds_items(client, sp, lg, eid):
-                p = it.get("provider") or {}
-                pid = str(p.get("id"))
-                provs[pid] += 1
-                names[pid] = p.get("name")
-                keys.setdefault(pid, set()).update(k for k in it.keys() if not k.startswith("$"))
-                bo = it.get("bettingOdds") or {}
-                if bo:
-                    keys[pid].update("bo." + k for k in (bo.get("teamOdds") or {}).keys())
-        return f"{sp}/{lg}", {"events": len(ids), "providers": {k: [names[k], v, sorted(keys[k])[:60]] for k, v in provs.items()}}
-
-
-async def b365_league(client, lg, sem):
-    async with sem:
-        ids = await pre_events(client, "soccer", lg)
-        team: Counter = Counter()
-        player: Counter = Counter()
-        n = 0
-        for eid in ids:
-            for it in await odds_items(client, "soccer", lg, eid):
-                if str((it.get("provider") or {}).get("id")) != "2000":
-                    continue
-                n += 1
-                bo = it.get("bettingOdds") or {}
-                team.update((bo.get("teamOdds") or {}).keys())
-                for k, v in (bo.get("playerOdds") or {}).items():
-                    player[f"{k}({len(v) if isinstance(v, list) else '?'})"] += 1
-                for k in bo.keys():
-                    if k not in ("teamOdds", "playerOdds"):
-                        team["<" + k + ">"] += 1
-        return lg, {"events": len(ids), "b365": n, "teamOdds": dict(team), "playerOdds": dict(player)}
-
-
-async def props_league(client, sp, lg, sem):
-    async with sem:
-        ids = await pre_events(client, sp, lg, cap=2)
-        types: Counter = Counter()
-        n = 0
-        for eid in ids:
-            s, j = await get(client, f"{CORE}/{sp}/leagues/{lg}/events/{eid}/competitions/{eid}/odds/100/propBets", {"limit": 1000})
-            items = (j or {}).get("items") or [] if isinstance(j, dict) else []
-            n += len(items)
-            types.update(((x.get("type") or {}).get("name") or "?") for x in items)
-        return f"{sp}/{lg}", {"events": len(ids), "items": n, "types": dict(types.most_common(40))}
+async def scoreboard(client, sp, lg, day_off):
+    d = datetime.now(timezone(timedelta(hours=-6))) + timedelta(days=day_off)
+    s, j = await get(client, f"{SITE}/{sp}/{lg}/scoreboard", {"dates": d.strftime("%Y%m%d"), "limit": 200})
+    return (j or {}).get("events") or [] if isinstance(j, dict) else []
 
 
 async def main():
     t0 = time.time()
-    sem = asyncio.Semaphore(6)
+    out: dict = {}
     async with httpx.AsyncClient(timeout=20.0, headers=UA, follow_redirects=True) as client:
-        us = dict(await asyncio.gather(*(us_league(client, sp, lg, sem) for sp, lg in US)))
-        b3 = dict(await asyncio.gather(*(b365_league(client, lg, sem) for lg in B365)))
-        pr = dict(await asyncio.gather(*(props_league(client, sp, lg, sem) for sp, lg in PROPS)))
-    out = {"us_providers": us, "bet365_soccer": b3, "dk_props": pr, "seconds": round(time.time() - t0, 1)}
-    (OUT / "probe.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+        # 1) NHL boxscore y gamelog
+        done = [e for e in await scoreboard(client, "hockey", "nhl", -1) if (e.get("status") or {}).get("type", {}).get("state") == "post"]
+        if done:
+            s, js = await get(client, f"{SITE}/hockey/nhl/summary", {"event": done[0]["id"]})
+            box = ((js or {}).get("boxscore") or {}).get("players") or []
+            grp = []
+            for team in box[:1]:
+                for g in team.get("statistics") or []:
+                    a0 = (g.get("athletes") or [{}])[0]
+                    grp.append({"name": g.get("name"), "keys": g.get("keys"), "labels": g.get("labels"),
+                                "sample_stats": a0.get("stats"), "athlete_keys": list(a0.keys()),
+                                "athlete_id": (a0.get("athlete") or {}).get("id")})
+            out["nhl_box"] = grp
+            aid = next((g["athlete_id"] for g in grp if g.get("athlete_id")), None)
+            if aid:
+                s, gl = await get(client, f"{WEB}/hockey/nhl/athletes/{aid}/gamelog")
+                gl = gl or {}
+                st = (gl.get("seasonTypes") or [{}])[0]
+                cat = (st.get("categories") or [{}])[0]
+                ev0 = (cat.get("events") or [{}])[0]
+                out["nhl_gamelog"] = {"status": s, "names": gl.get("names"), "labels": gl.get("labels"),
+                                      "top_keys": list(gl.keys()), "cat_keys": list(cat.keys()),
+                                      "event0": ev0, "n_events": len(cat.get("events") or [])}
+        # 2) NHL props O/U
+        pre = [e for k in (0, 1) for e in await scoreboard(client, "hockey", "nhl", k)
+               if (e.get("status") or {}).get("type", {}).get("state") == "pre"]
+        if pre:
+            eid = pre[0]["id"]
+            s, j = await get(client, f"{CORE}/hockey/leagues/nhl/events/{eid}/competitions/{eid}/odds/100/propBets", {"limit": 1000})
+            items = (j or {}).get("items") or []
+            out["nhl_props_meta"] = {k: (j or {}).get(k) for k in ("count", "pageIndex", "pageSize", "pageCount")}
+            want = ("Total Shots on Goal", "Total Points", "Total Assists", "Shots on Goal Milestones", "Anytime Goalscorer")
+            out["nhl_props"] = {w: [strip(x) for x in items if (x.get("type") or {}).get("name") == w][:4] for w in want}
+        # 3) Fútbol: goleadores de DraftKings + plantel
+        for lg in ("eng.1", "esp.1", "mex.1"):
+            evs = [e for k in (0, 1, 2) for e in await scoreboard(client, "soccer", lg, k)
+                   if (e.get("status") or {}).get("type", {}).get("state") == "pre"]
+            if not evs:
+                continue
+            e = evs[0]
+            eid = e["id"]
+            s, j = await get(client, f"{CORE}/soccer/leagues/{lg}/events/{eid}/competitions/{eid}/odds/100/propBets", {"limit": 1000})
+            items = (j or {}).get("items") or []
+            meta = {k: (j or {}).get(k) for k in ("count", "pageIndex", "pageSize", "pageCount")}
+            want = ("Anytime Goalscorer", "To Score 2+ Goals", "First Goalscorer", "Team Total Goals")
+            comp = (e.get("competitions") or [{}])[0]
+            tid = ((comp.get("competitors") or [{}])[0].get("team") or {}).get("id")
+            s2, ro = await get(client, f"{SITE}/soccer/{lg}/teams/{tid}/roster") if tid else (0, None)
+            ath = (ro or {}).get("athletes") or []
+            out[f"soccer_{lg}"] = {"meta": meta, "props": {w: [strip(x) for x in items if (x.get("type") or {}).get("name") == w][:3] for w in want},
+                                   "roster_status": s2, "roster_n": len(ath),
+                                   "roster0": {k: ath[0].get(k) for k in ("id", "displayName", "position")} if ath else None,
+                                   "roster_keys": list(ath[0].keys())[:30] if ath else None}
+    out["seconds"] = round(time.time() - t0, 1)
+    (OUT / "probe.json").write_text(json.dumps(out, ensure_ascii=False, indent=1, default=str))
     print("[probe] listo", out["seconds"], "s")
 
 
