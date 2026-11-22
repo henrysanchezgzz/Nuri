@@ -152,6 +152,30 @@ def parse_markets(fam: str, bookmakers: dict) -> dict:
     return out
 
 
+def parse_props_io(bookmakers: dict) -> dict:
+    """Props de jugadores de cada casa: {'Caliente.mx': [{"name", "stat", "line", "over", "under"}]}.
+    odds-api.io los manda en el mercado "Player Props" con filas tipo
+    {"label": "Jalen Brunson (Points)", "hdp": 27.5, "over": "1.87", "under": "1.95"}."""
+    out: dict[str, list] = {}
+    for bname, markets in (bookmakers or {}).items():
+        rows_out = []
+        for m in markets or []:
+            if not isinstance(m, dict) or "player" not in (m.get("name") or "").lower():
+                continue
+            for r0 in m.get("odds") or []:
+                if not isinstance(r0, dict):
+                    continue
+                mm = re.match(r"^(.*?)\s*\((.+)\)\s*$", str(r0.get("label") or ""))
+                L = _num(r0.get("hdp"))
+                o, u = _odd(r0.get("over")), _odd(r0.get("under"))
+                if mm and L is not None and (o or u):
+                    rows_out.append({"name": mm.group(1).strip(), "stat": mm.group(2).strip().lower(), "line": L,
+                                     "over": o, "under": u})
+        if rows_out:
+            out[BOOKS.get(bname, bname)] = rows_out
+    return out
+
+
 class OddsIoSource:
     """Cliente de odds-api.io. Corre en segundo plano dentro del feed de ESPN."""
 
@@ -318,7 +342,7 @@ class OddsIoSource:
                     continue
                 fam = self.events.get(str(ev.get("id")), {}).get("fam") or "football"
                 books = parse_markets(fam, ev.get("bookmakers") or {})
-                self.quotes[eid] = {"ts": time.time(), "books": books,
+                self.quotes[eid] = {"ts": time.time(), "books": books, "props": parse_props_io(ev.get("bookmakers") or {}),
                                     "urls": {BOOKS.get(k, k): v for k, v in (ev.get("urls") or {}).items()}}
         n_q = sum(1 for q in self.quotes.values() if time.time() - q["ts"] < 900 and q["books"])
         names = ", ".join(self.books)
@@ -494,7 +518,8 @@ class OddsIoSource:
                     if not eid:
                         continue
                     fam = self.events.get(str(ev.get("id")), {}).get("fam") or "football"
-                    self.quotes[eid] = {"ts": time.time(), "books": parse_markets(fam, ev.get("bookmakers") or {}),
+                    bk = ev.get("bookmakers") or {}
+                    self.quotes[eid] = {"ts": time.time(), "books": parse_markets(fam, bk), "props": parse_props_io(bk),
                                         "urls": {BOOKS.get(k, k): v for k, v in (ev.get("urls") or {}).items()}}
         except RuntimeError:
             pass   # 401 / 403 / 429: ya quedó en el estado

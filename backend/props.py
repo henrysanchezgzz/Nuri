@@ -405,7 +405,10 @@ class PropsSource:
         for grp in js.get("athletes") or []:
             for a in (grp.get("items") if isinstance(grp, dict) and "items" in grp else [grp]):
                 if isinstance(a, dict) and a.get("id"):
-                    self.names[str(a["id"])] = [a.get("displayName") or a.get("fullName") or "", team_id, now]
+                    pos = a.get("position") or {}
+                    self.names[str(a["id"])] = [a.get("displayName") or a.get("fullName") or "", team_id, now,
+                                                (pos.get("abbreviation") if isinstance(pos, dict) else "") or "",
+                                                str(a.get("jersey") or "")]
         self.rost_ts[f"{lg}:{team_id}"] = now
 
     async def refresh(self, feed, now: float | None = None, concurrency: int = 8) -> None:
@@ -510,6 +513,28 @@ class PropsSource:
         v = self.names.get(str(aid))
         return v[0] if v else None
 
+    def info_of(self, aid: str) -> dict:
+        """{"name", "team_id", "pos", "num"} del plantel de ESPN (lo que haya)."""
+        v = self.names.get(str(aid)) or []
+        return {"name": v[0] if v else None, "team_id": v[1] if len(v) > 1 else None,
+                "pos": v[3] if len(v) > 3 else "", "num": v[4] if len(v) > 4 else ""}
+
+    def find(self, name: str, team_ids: tuple) -> str | None:
+        """El id de ESPN de un jugador por su nombre, entre los planteles de los equipos del partido."""
+        n = norm(name)
+        if not n:
+            return None
+        last = n.split()[-1]
+        cands = []
+        for aid, v in self.names.items():
+            if len(v) > 1 and str(v[1]) in {str(t) for t in team_ids if t}:
+                m = norm(v[0])
+                if m == n:
+                    return aid
+                if m.split() and m.split()[-1] == last and m[:1] == n[:1]:
+                    cands.append(aid)
+        return cands[0] if len(cands) == 1 else None
+
     def candidates(self, feed, now: float, injuries: dict | None = None, min_p: float = MIN_P,
                    use_form: bool = True) -> list[dict]:
         """Props con línea vieja todavía valiosa (o momio que se movió fuerte en la misma línea)."""
@@ -591,6 +616,93 @@ class PropsSource:
                 out.append(cand)
         out.sort(key=lambda c: -c["score"])
         return out
+
+
+# ------------------------------------------------------------------------------ props con momio real (Caliente / Codere)
+IO_STATS = {   # cómo nombra odds-api.io cada estadística (en minúsculas) → clave de NURI, por deporte
+    "basketball": {"points": "pts", "rebounds": "reb", "assists": "ast", "threes": "3pm", "3 pointers": "3pm",
+                   "three pointers": "3pm", "3-pointers": "3pm", "3-pointers made": "3pm", "threes made": "3pm",
+                   "3 point field goals": "3pm", "points + rebounds + assists": "pra", "pts + reb + ast": "pra",
+                   "points + rebounds": "pr", "pts + reb": "pr", "points + assists": "pa", "pts + ast": "pa",
+                   "rebounds + assists": "ra", "reb + ast": "ra"},
+    "americanfootball": {"passing yards": "pass_yds", "rushing yards": "rush_yds", "receiving yards": "rec_yds",
+                         "receptions": "rec", "passing completions": "pass_cmp", "pass completions": "pass_cmp",
+                         "completions": "pass_cmp", "passing attempts": "pass_att", "pass attempts": "pass_att",
+                         "rushing attempts": "carries", "carries": "carries", "rush attempts": "carries",
+                         "rushing + receiving yards": "rush_rec_yds", "rush + rec yards": "rush_rec_yds"},
+    "hockey": {"shots on goal": "sog", "shots": "sog", "points": "hpts", "assists": "hast"},
+}
+REAL_EDGE = 0.05       # el momio real tiene que dejar ≥ 5 % sobre lo justo
+
+
+def io_stat(fam: str, raw: str) -> str | None:
+    r = re.sub(r"\s+", " ", (raw or "").lower().replace("&", "+").replace(" and ", " + ").replace("+", " + "))
+    r = re.sub(r"\s+", " ", r).strip()
+    m = IO_STATS.get(fam) or {}
+    for k in (r, r.replace("total ", "").replace("player ", "").strip()):
+        if k in m:
+            return m[k]
+    return None
+
+
+def real_candidates(src, feed, now: float) -> list[dict]:
+    """Props que Caliente / Codere pagan de más HOY, contra el precio justo de DraftKings (misma línea, o una
+    línea cercana con la distribución del jugador), mezclado con su historial real."""
+    io = getattr(feed, "oddsio", None)
+    if io is None or src is None:
+        return []
+    out = []
+    for eid, q in (io.quotes or {}).items():
+        if now - q.get("ts", 0) > io.max_age_pre or not q.get("props"):
+            continue
+        e = (feed.raw or {}).get(eid) or {}
+        if e.get("status") != "pre" or not (20 * 60 <= e.get("start_ts", 0) - now <= MAX_START_S):
+            continue
+        fam = e.get("sport")
+        dk = src.props.get(eid) or {}
+        if not dk:
+            continue
+        for book, rows in q["props"].items():
+            for r in rows:
+                stat = io_stat(fam, r.get("stat"))
+                if not stat:
+                    continue
+                aid = src.find(r["name"], (e.get("_home_id"), e.get("_away_id")))
+                pr = dk.get(f"{stat}:{aid}") if aid else None
+                if not pr or pr.get("p_over") is None:
+                    continue
+                steps = abs(r["line"] - pr["line"]) / max(pr["step"], 0.5)
+                if steps > 2:
+                    continue                       # línea muy distinta: no se extrapola
+                if r.get("over") and r.get("under") and 1 / r["over"] + 1 / r["under"] < 1.0:
+                    continue                       # el par paga más de 100 %: casi siempre es un dato malo
+                games = (src.gl.get(aid) or {}).get("games")
+                for side in ("over", "under"):
+                    o = r.get(side)
+                    if not o or not (1.4 <= o <= 3.6):
+                        continue
+                    p = price_line(pr, r["line"], side)
+                    form = form_of(games, stat, r["line"], side) if games else None
+                    if form and form["n10"] >= 5:
+                        p = 0.8 * p + 0.2 * (form["hits"] + 1) / (form["n10"] + 2)
+                    ev = p * o - 1
+                    if ev < REAL_EDGE or not (0.38 <= p <= 0.80):
+                        continue
+                    h = src.hist.get(f"{eid}|{stat}:{aid}") or [pr["line"], 0.0, now, now]
+                    moved_my_way = h[1] and pr.get("open") is not None and (
+                        (pr["line"] > pr["open"]) == (side == "over")) and pr["line"] != pr["open"]
+                    conf = 52 + min(18.0, (ev - REAL_EDGE) * 200) + (6 if steps == 0 else -3 * steps)
+                    conf += 4 if moved_my_way else 0
+                    if form and form["n10"] >= 5:
+                        conf += 8 if form["hr"] >= 0.7 else 4 if form["hr"] >= 0.6 else -8 if form["hr"] <= 0.4 else 0
+                    hrs = (e.get("start_ts", now) - now) / 3600
+                    conf += 3 if hrs <= 4 else (-3 if hrs >= 24 else 0)
+                    out.append({"event_id": eid, "athlete": aid, "player": src.name_of(aid) or r["name"], "stat": stat,
+                                "label": pr["label"], "line": r["line"], "side": side, "odds": o, "book": book,
+                                "p": round(p, 4), "ev": round(ev, 4), "dk_line": pr["line"], "form": form,
+                                "conf_score": round(min(conf, 88.0), 1), "ev_raw": e})
+    out.sort(key=lambda c: -c["conf_score"])
+    return out
 
 
 # ------------------------------------------------------------------------------ calificar

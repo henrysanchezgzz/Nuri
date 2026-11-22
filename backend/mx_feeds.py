@@ -2196,7 +2196,8 @@ class EspnFeed:
             t = c.get("team") or {}
             logo = t.get("logo") or ((t.get("logos") or [{}])[0].get("href"))
             return {"name": t.get("shortDisplayName") if fam == "football" else t.get("displayName") or t.get("name"),
-                    "short": t.get("abbreviation") or short_name(t.get("displayName", "")), "logo": logo}
+                    "short": t.get("abbreviation") or short_name(t.get("displayName", "")), "logo": logo,
+                    "color": t.get("color") or None, "alt": t.get("alternateColor") or None}
 
         eid = f"espn-{ev['id']}"
         period = int(st.get("period") or 0)

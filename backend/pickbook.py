@@ -507,6 +507,7 @@ class PickBook:
                       f"{rec['selection_label']} @ {rec['odds']}")
         self.confirming = confirming
         self._update_scorers(feed, now, existing, per_day, stake_day)
+        self._update_real_props(feed, now, existing, per_day, stake_day)
         self._update_props(feed, now, existing, per_day, stake_day)
         self._track_close(result, feed, now)
 
@@ -569,6 +570,83 @@ class PickBook:
                 if self.notifier:
                     self.notifier.pick(rec, MX_TZ)
                 print(f"[picks] nuevo goleador · {rec['league']} · {c['player']} @ {c['odds']}")
+
+    # ------------------------------------------------------------------ props con momio real (Caliente / Codere)
+    MAX_REAL_PROPS_DAY = 10
+    MAX_REAL_PROPS_LEAGUE_DAY = 5
+
+    def _update_real_props(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
+        src = getattr(feed, "props_src", None)
+        if src is None or "prop" in self.disabled:
+            return
+        import props as P
+        try:
+            cands = P.real_candidates(src, feed, now)
+        except Exception as exc:
+            print(f"[picks] props con momio real: {type(exc).__name__}: {exc}")
+            return
+        pid_of = lambda c: f"{c['event_id']}|rprop:{c['stat']}:{c['athlete']}|{c['side']}"
+        alive = {pid_of(c) for c in cands}
+        for k in [k for k in self.seen if "|rprop:" in k and k not in alive]:
+            self.seen.pop(k, None)
+        per_game: dict[str, list] = {}
+        rp_day: dict[str, int] = {}
+        rp_lg: dict[tuple, int] = {}
+        for p in existing:
+            if p.get("market_type") == "prop":
+                k = P.parse_key(p.get("market_key") or "")
+                per_game.setdefault(p["event_id"], []).append(k[1] if k else "?")
+                if p.get("tier") == "A":
+                    d_ = datetime.fromtimestamp(p["start_ts"] or now, MX_TZ).date().isoformat()
+                    rp_day[d_] = rp_day.get(d_, 0) + 1
+                    rp_lg[(d_, p["league"])] = rp_lg.get((d_, p["league"]), 0) + 1
+        for c in cands:
+            e = c["ev_raw"]
+            pid = pid_of(c)
+            first = self.seen.setdefault(pid, now)            # se tiene que sostener en dos revisiones
+            if now - first < self.CONFIRM_S:
+                continue
+            had = per_game.get(c["event_id"]) or []
+            if str(c["athlete"]) in had or len(had) >= 2:
+                continue
+            day = datetime.fromtimestamp(e["start_ts"], MX_TZ).date().isoformat()
+            if (rp_day.get(day, 0) >= self.MAX_REAL_PROPS_DAY or per_day.get(day, 0) >= self.MAX_PER_DAY
+                    or rp_lg.get((day, e.get("league")), 0) >= self.MAX_REAL_PROPS_LEAGUE_DAY):
+                continue
+            level = self.level_of(c["conf_score"])
+            stake = round(kelly_pct(c["odds"], c["p"], 1 - c["p"]) * STAKE_MULT[level], 4)
+            if stake <= 0 or stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
+                continue
+            side_txt = "Más" if c["side"] == "over" else "Menos"
+            bk = book_name(c["book"])
+            same = abs(c["line"] - c["dk_line"]) < 1e-9
+            rec = {
+                "id": pid, "created_at": now, "tier": "A", "event_id": c["event_id"], "espn_id": e.get("_espn_id"),
+                "league_code": e.get("_league"), "sport": e.get("sport"), "league": e.get("league"),
+                "home": (e.get("home") or {}).get("name"), "away": (e.get("away") or {}).get("name"),
+                "home_logo": (e.get("home") or {}).get("logo"), "away_logo": (e.get("away") or {}).get("logo"),
+                "start_ts": e.get("start_ts"), "market_key": f"prop:{c['stat']}:{c['athlete']}:{c['line']:g}",
+                "market_type": "prop", "market_label": c["player"], "line": c["line"], "selection": c["side"],
+                "selection_label": f"{side_txt} de {c['line']:g} {c['label']}", "book": c["book"], "odds": c["odds"],
+                "min_odds": round((1 + 0.02) / c["p"], 2), "p": c["p"], "ev": c["ev"], "score": c["conf_score"] / 100,
+                "stats_score": 0.0, "move": round(c["dk_line"] - c["line"], 2), "stake_pct": stake,
+                "reason": (f"{bk} la paga a {c['odds']:.2f} y lo justo, con el mercado de DraftKings y su historial, es "
+                           f"{1 / c['p']:.2f}." if same else
+                           f"{bk} todavía tiene la línea en {c['line']:g}; DraftKings ya está en {c['dk_line']:g}. "
+                           f"A {c['odds']:.2f} conviene."),
+                "conf": level, "conf_score": c["conf_score"],
+            }
+            if db.add_nuri_pick(rec):
+                per_game.setdefault(c["event_id"], []).append(str(c["athlete"]))
+                rp_day[day] = rp_day.get(day, 0) + 1
+                rp_lg[(day, e.get("league"))] = rp_lg.get((day, e.get("league")), 0) + 1
+                per_day[day] = per_day.get(day, 0) + 1
+                stake_day[day] = stake_day.get(day, 0.0) + stake
+                if self.notifier:
+                    self.notifier.pick(rec, MX_TZ)
+                print(f"[picks] nuevo prop con momio real · {rec['league']} · {c['player']} · {rec['selection_label']} "
+                      f"@ {c['odds']} ({bk})")
+        self._track_close_props(feed, now)
 
     async def _settle_scorer(self, feed, p: dict, now: float) -> int:
         box = getattr(feed, "fetch_box", None)
@@ -870,6 +948,11 @@ class PickBook:
             if e:
                 item["live"] = {"status": e.get("status"), "score": e.get("score"), "clock": e.get("clock")}
             if p["result"] == "pending":
+                try:   # análisis completo (quién juega, números reales, por qué conviene)
+                    import analysis
+                    item["an"] = analysis.build(p, feed, self.hist, item["book"])
+                except Exception as exc:
+                    print(f"[análisis] {p['id']}: {type(exc).__name__}: {exc}")
                 current.append(item)
             else:
                 history.append(item)

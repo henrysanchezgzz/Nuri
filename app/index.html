@@ -555,6 +555,117 @@ body.aero .lock .lk-t,body.aero .lock .lk-s,body.aero .lock .lk-n{color:#0b3552}
 .fpl[open] summary::after{transform:rotate(-135deg);margin-top:4px}
 .fpl .fl{margin-top:0}
 .fpn{margin:12px 2px 0;font-size:13px;font-weight:700;color:var(--ink-2)}
+/* ---------- tarjeta de pick vistosa ---------- */
+.pk2{padding:0;overflow:hidden;cursor:pointer}
+.ph{position:relative;overflow:hidden;padding:14px 16px 16px;color:#fff;background:linear-gradient(135deg,var(--h1),var(--h2));isolation:isolate}
+.ph::after{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(130% 95% at 0% 0%,rgba(255,255,255,.30),rgba(255,255,255,0) 55%),linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.22))}
+.ph.dark{color:#101418}
+.ph-num{position:absolute;right:-4px;bottom:-40px;font-style:normal;font-weight:900;font-size:156px;line-height:1;letter-spacing:-.07em;opacity:.15;z-index:-1;pointer-events:none}
+.ph-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px;font-weight:700}
+.ph-top>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.95}
+.ph .bdg{box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.ph-main{display:flex;align-items:center;gap:15px;margin-top:12px}
+.ph-jsy{position:relative;flex:none;width:80px;height:80px;filter:drop-shadow(0 8px 12px rgba(0,0,0,.3))}
+.jsy{width:100%;height:100%;display:block}
+.jsy text{font-family:Inter,"Segoe UI",system-ui,sans-serif}
+.ph-logo{position:absolute;right:-7px;bottom:-5px;width:31px;height:31px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.28)}
+.ph-logo img{width:22px;height:22px;object-fit:contain}
+.ph-who{min-width:0}
+.ph-who b{display:block;font-size:23px;font-weight:900;letter-spacing:-.02em;line-height:1.02;text-transform:uppercase;text-shadow:0 2px 12px rgba(0,0,0,.2);overflow-wrap:anywhere}
+.ph.dark .ph-who b{text-shadow:none}
+.ph-who small{display:block;font-size:13px;font-weight:700;opacity:.95;margin-top:5px}
+.ph-who small.op{opacity:.8;font-weight:500;margin-top:1px}
+.ph.ph2{padding-bottom:18px;background:linear-gradient(105deg,var(--h1) 0%,var(--h1) 40%,var(--h2) 60%,var(--h2) 100%)}
+.ph-vs{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px}
+.ph-vs>i{font-style:normal;font-weight:900;font-size:14px;opacity:.85}
+.ph-vs .tm{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.ph-vs .tm b{font-size:14px;font-weight:800;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 8px rgba(0,0,0,.2)}
+.crest{width:54px;height:54px;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;font-weight:900;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.26);flex:none;overflow:hidden}
+.crest img{width:38px;height:38px;object-fit:contain}
+.ph-vs .tm.sel .crest{box-shadow:0 0 0 3px #fff,0 0 0 7px rgba(255,255,255,.32),0 8px 18px rgba(0,0,0,.32)}
+.pk2-b{padding:14px 16px}
+.pk2-b .pk-bet{margin:0 0 12px}
+.pq{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pq>div{background:var(--fill);border-radius:14px;padding:9px 6px;text-align:center;min-width:0}
+.pq small{display:block;font-size:11px;font-weight:800;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pq b{display:block;font-size:21px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:2px}
+.pq .ev b{color:var(--accent)}
+.meter{display:flex;align-items:center;gap:4px;margin:13px 2px 0}
+.meter i{width:24px;height:7px;border-radius:4px;background:var(--fill-2)}
+.meter.m-lock i.f{background:linear-gradient(90deg,#f5a10b,#ffd25a)}
+.meter.m-alta i.f{background:var(--accent)}
+.meter.m-media i.f{background:var(--blue)}
+.meter.m-baja i.f{background:var(--muted)}
+.meter span{margin-left:8px;font-size:13px;color:var(--ink-2);font-weight:600}
+.meter span b{color:var(--ink)}
+.pts{display:flex;flex-direction:column;gap:11px}
+.pts.mini{margin-top:13px;gap:8px}
+.pt{display:flex;gap:10px;align-items:flex-start}
+.pt .ico{flex:none;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;color:var(--c);background:var(--fill);
+  background:color-mix(in srgb,var(--c) 17%,transparent)}
+.pt .ico .i{width:13px;height:13px;stroke:currentColor;stroke-width:2.6;fill:none}
+.pt p{margin:2px 0 0;font-size:14px;line-height:1.42;color:var(--ink)}
+.pts.mini .pt p{font-size:13.5px;color:var(--ink-2);margin-top:2px}
+.pk2-f{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:13px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;font-weight:600;color:var(--ink-2)}
+.pk2-f>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk2-f .more{flex:none;display:flex;align-items:center;gap:1px;color:var(--accent);font-weight:800}
+.pk2-f .more .i{width:16px;height:16px;stroke:currentColor;stroke-width:2.6;fill:none}
+.pk2.lv-lock{box-shadow:0 0 0 2px rgba(245,161,11,.7),0 16px 40px -14px rgba(245,161,11,.75)}
+/* ---------- análisis (hoja) ---------- */
+.sh-hero{margin:2px 0 14px;border-radius:22px;overflow:hidden;box-shadow:0 12px 30px -16px rgba(0,0,0,.45)}
+.sh-bet{margin:2px 0 12px;font-size:24px;font-weight:900;letter-spacing:-.02em}
+.lvnote{text-align:left;margin:8px 2px 0}
+.pbars{display:flex;flex-direction:column;gap:10px}
+.pbars>div{display:grid;grid-template-columns:74px 1fr 42px;align-items:center;gap:10px;font-size:13px;font-weight:700}
+.pbars span{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbars i{height:12px;border-radius:6px;background:var(--fill-2);position:relative;overflow:hidden}
+.pbars i::after{content:'';position:absolute;left:0;top:0;bottom:0;width:var(--w);border-radius:6px}
+.pbars i.pf::after{background:var(--accent)}
+.pbars i.pb::after{background:var(--muted)}
+.pbars b{text-align:right;font-variant-numeric:tabular-nums}
+.pchart{background:var(--fill);border-radius:16px;padding:14px 10px 9px}
+.pchart svg{width:100%;height:136px;display:block;overflow:visible}
+.pchart rect.hit{fill:var(--accent)}
+.pchart rect.miss{fill:var(--red);opacity:.5}
+.pchart .bv{font-size:10px;font-weight:800;fill:var(--ink-2)}
+.pchart .ln{stroke:var(--ink);stroke-width:1.6;stroke-dasharray:5 4;opacity:.65}
+.pchart-k{display:flex;gap:10px;justify-content:space-between;margin-top:7px;font-size:11.5px;font-weight:600;color:var(--ink-2)}
+.pchart-k span{display:flex;align-items:center;gap:5px}
+.k-ln{width:14px;border-top:2px dashed var(--ink);opacity:.65}
+.k-hit{width:10px;height:10px;border-radius:3px;background:var(--accent)}
+.ptiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.ptiles>div{background:var(--fill);border-radius:14px;padding:10px 12px;min-width:0}
+.ptiles small{display:block;font-size:11px;font-weight:800;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptiles b{display:block;font-size:18px;font-weight:900;margin-top:2px}
+.forms{padding:2px 12px}
+.frow{display:flex;align-items:center;gap:10px;padding:10px 0}
+.frow+.frow{border-top:1px solid var(--line)}
+.frow .crest{width:30px;height:30px;font-size:10px;box-shadow:none;border:1px solid var(--line)}
+.frow .crest img{width:21px;height:21px}
+.frow>b{width:46px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow.sel>b{color:var(--accent)}
+.fchips{display:flex;gap:5px;margin-left:auto}
+.ch{width:35px;border-radius:9px;text-align:center;padding:4px 0 3px;color:#fff}
+.ch b{display:block;font-size:12px;font-weight:900;line-height:1.1}
+.ch small{display:block;font-size:9.5px;font-weight:700;opacity:.92;margin-top:1px}
+.ch-G{background:#22a447}.ch-E{background:#8a94a6}.ch-P{background:#e0413a}
+.pred{display:flex;height:30px;border-radius:10px;overflow:hidden;gap:2px}
+.pred i{display:grid;place-items:center;min-width:36px;color:#fff;font-style:normal}
+.pred i b{font-size:12px;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,.35)}
+.pred-k{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);font-weight:600;margin-top:6px}
+.srows{padding:4px 14px}
+.sr-h{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--ink-2);padding:7px 0}
+.sr{display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);text-align:center}
+.sr span{font-size:12.5px;color:var(--ink-2);font-weight:600}
+.sr b{font-size:15px;font-weight:800}
+.sr b.up{color:var(--accent)}
+.ph .bdg{border:0;text-shadow:none}
+.ph .bdg.l-alta{background:#1f9d4c;color:#fff}
+.ph .bdg.l-media{background:#2f6bff;color:#fff}
+.ph .bdg.l-baja{background:rgba(255,255,255,.9);color:#3a4256}
+.ph .bdg.l-lock{background:linear-gradient(180deg,#ffd25a,#f5a10b);color:#3d2600}
+body.aero .sheet{background:linear-gradient(180deg,#ffffff,#eaf7ff)}
 
 </style>
 </head>
@@ -563,6 +674,7 @@ body.aero .lock .lk-t,body.aero .lock .lk-s,body.aero .lock .lk-n{color:#0b3552}
   <div class="bg-aero"><div class="rays"></div><div class="sun"></div><div class="cl c1"></div><div class="cl c2"></div><span id="bubs"></span>
     <svg viewBox="0 0 1440 300" preserveAspectRatio="none"><defs><linearGradient id="ah1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9f06d"/><stop offset="1" stop-color="#4fae22"/></linearGradient><linearGradient id="ah2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fe04c"/><stop offset="1" stop-color="#2f8f12"/></linearGradient></defs>
     <path d="M0 160 C 260 60, 520 80, 760 140 S 1200 210, 1440 110 L1440 300 L0 300Z" fill="url(#ah1)" opacity=".85"/><path d="M0 230 C 300 170, 640 200, 900 230 S 1300 250, 1440 200 L1440 300 L0 300Z" fill="url(#ah2)"/></svg></div></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="jgl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".45" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient></defs></svg>
 <div class="app">
   <header class="hd">
     <div class="brand"><img id="logo" src="logo-aero.png" alt=""><b>NURI</b></div>
@@ -588,7 +700,9 @@ const P={
  check:'<polyline points="20 6 9 17 4 12"/>',x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
  minus:'<line x1="5" y1="12" x2="19" y2="12"/>',clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',lock:'<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
- down:'<polyline points="6 9 12 15 18 9"/>',
+ down:'<polyline points="6 9 12 15 18 9"/>',chev:'<polyline points="9 6 15 12 9 18"/>',
+ alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+ info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
  search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
  refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
 };
@@ -677,7 +791,84 @@ function stake(p){const st=Math.max(p.stake_pct||.01,.005);if(prefs.bank>0)retur
 function who(p){return isPlayer(p)?`<div class="who"><b>${esc(p.market_label)}</b><small>${esc(p.home)} vs ${esc(p.away)}</small></div>`
   :`<div class="who teams">${logo(p.home_logo)}<span>${esc(p.home)}</span><i>vs</i><span>${esc(p.away)}</span>${logo(p.away_logo)}</div>`}
 const cond=p=>p.tier!=='A';
-function pickCard(p){const lv=p.live&&p.live.status==='live';
+/* ---------- colores de equipo, playera y portada del pick ---------- */
+const hx=c=>{c=String(c||'').replace('#','');return /^[0-9a-f]{6}$/i.test(c)?c.toLowerCase():null};
+const rgb=c=>[0,2,4].map(i=>parseInt(c.slice(i,i+2),16));
+const lum=c=>{const v=rgb(c).map(x=>{x/=255;return x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4)});return .2126*v[0]+.7152*v[1]+.0722*v[2]};
+const shade=(c,k)=>'#'+rgb(c).map(v=>Math.max(0,Math.min(255,Math.round(k<0?v*(1+k):v+(255-v)*k))).toString(16).padStart(2,'0')).join('');
+const ctr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+function tcol(t){const c=hx(t&&t.color)||'2b5fb3';let a=hx(t&&t.alt);if(!a||ctr(c,a)<2.4)a=lum(c)>.42?'111111':'ffffff';return [c,a]}
+const SHIRT='M30 8 18 12 4 28 14 40 22 34 22 92 78 92 78 34 86 40 96 28 82 12 70 8C66 16 58 20 50 20 42 20 34 16 30 8Z';
+const TANK='M33 6 23 8C23 24 17 32 13 36V94H87V36C83 32 77 24 77 8L67 6C65 18 58 26 50 26 42 26 35 18 33 6Z';
+function jersey(sport,c,a,num,init){const d=sport==='basketball'?TANK:SHIRT,t=String(num||init||'').slice(0,3),fs=t.length>2?25:t.length>1?33:38;
+  return `<svg class="jsy" viewBox="0 0 100 100" aria-hidden="true"><path d="${d}" fill="#${c}"/><path d="${d}" fill="url(#jgl)"/>
+   <path d="${d}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.4"/>
+   <text x="50" y="${sport==='basketball'?72:68}" text-anchor="middle" font-size="${fs}" font-weight="900" fill="#${a}" letter-spacing="-1">${esc(t)}</text></svg>`}
+function crest(t){const [c,a]=tcol(t);return t.logo?`<span class="crest"><img src="${esc(t.logo)}" alt="" onerror="this.parentNode.textContent='${esc((t.short||t.name||'?').slice(0,3))}'"></span>`
+  :`<span class="crest" style="background:#${c};color:#${a}">${esc((t.short||t.name||'?').slice(0,3))}</span>`}
+const whenTxt=p=>p.live&&p.live.status==='live'?'<span class="live">En vivo</span>':esc(when(p.start_ts));
+function vsTxt(p,side){return side==='home'?`vs ${p.away}`:side==='away'?`vs ${p.home} (visita)`:`${p.home} vs ${p.away}`}
+function hero(p,an){const pl=an&&an.player,T=(an&&an.teams)||{};
+  if(pl){const [c,a]=tcol(pl),dk=lum(c)>.6?' dark':'';
+    return `<div class="ph${dk}" style="--h1:#${c};--h2:${shade(c,-.55)}"><i class="ph-num">${esc(pl.num||pl.init||'')}</i>
+     <div class="ph-top"><span>${esc(p.league)} · ${whenTxt(p)}</span>${badge(p)}</div>
+     <div class="ph-main"><div class="ph-jsy">${jersey(p.sport,c,a,pl.num,pl.init)}${pl.logo?`<span class="ph-logo"><img src="${esc(pl.logo)}" alt="" onerror="this.parentNode.remove()"></span>`:''}</div>
+      <div class="ph-who"><b>${esc(pl.name)}</b><small>${esc([pl.pos,pl.team].filter(Boolean).join(' · '))}</small><small class="op">${esc(vsTxt(p,pl.side))}</small></div></div></div>`}
+  const h=T.home||{name:p.home,logo:p.home_logo},w=T.away||{name:p.away,logo:p.away_logo},side=an&&an.pick_side;
+  const [c1]=tcol(h),[c2]=tcol(w);
+  return `<div class="ph ph2" style="--h1:${shade(c1,-.15)};--h2:${shade(c2,-.15)}">
+   <div class="ph-top"><span>${esc(p.league)} · ${whenTxt(p)}</span>${badge(p)}</div>
+   <div class="ph-vs"><div class="tm${side==='home'?' sel':''}">${crest(h)}<b>${esc(h.name||p.home)}</b></div><i>vs</i>
+    <div class="tm${side==='away'?' sel':''}">${crest(w)}<b>${esc(w.name||p.away)}</b></div></div></div>`}
+function quotes(p,an){const pr=(an&&an.probs)||{};
+  return `<div class="pq"><div><small>${esc(p.book||'Casa')}</small><b>${f2(p.odds)}</b></div>
+   <div><small>Lo justo</small><b>${pr.fair_odds?f2(pr.fair_odds):'—'}</b></div>
+   <div class="ev"><small>Ventaja</small><b>${pr.edge!=null?(pr.edge>=0?'+':'')+Math.round(pr.edge*100)+'%':'—'}</b></div></div>`}
+function meter(p){const l=lvl(p),n={baja:1,media:2,alta:3,lock:4}[l];
+  return `<div class="meter m-${l}">${[1,2,3,4].map(i=>`<i class="${i<=n?'f':''}"></i>`).join('')}<span>Confianza <b>${LV[l][0]}</b></span></div>`}
+const PT={pos:['check','var(--accent)'],neg:['alert','var(--amber)'],info:['info','var(--blue)']};
+function pts(list,n){return (list||[]).slice(0,n||99).map(([k,t])=>`<div class="pt"><span class="ico" style="--c:${(PT[k]||PT.info)[1]}">${ic((PT[k]||PT.info)[0])}</span><p>${esc(t)}</p></div>`).join('')}
+function pickCard(p){const an=p.an;if(!an)return pickCardOld(p);
+  const teaser=(an.points||[]).filter(x=>x[0]!=='info').slice(1,3);
+  return `<div class="card pk2 anim lv-${lvl(p)}" data-pick="${esc(p.id)}">${hero(p,an)}
+   <div class="pk2-b"><div class="pk-bet">${esc(p.selection_label)}</div>
+    ${quotes(p,an)}${meter(p)}
+    ${teaser.length?`<div class="pts mini">${pts(teaser)}</div>`:''}
+    <div class="pk2-f"><span>${esc(stake(p))} · conviene desde ${f2(p.min_odds||p.odds)}</span><span class="more">Análisis${ic('chev')}</span></div></div></div>`}
+/* ---------- gráficas del análisis ---------- */
+function bars10(s){const v=s.vals||[],L=s.line,over=s.side!=='under',mx=Math.max(L*1.35,...v,1),W=300,H=128,top=14,bw=W/v.length;
+  const y=x=>top+(H-top)*(1-x/mx),ly=y(L);
+  const b=v.map((x,i)=>{const hit=over?x>L:x<L,h=Math.max(2,H-y(x));return `<rect x="${(i*bw+bw*.16).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}" height="${h.toFixed(1)}" rx="4" class="${hit?'hit':'miss'}"/>
+   <text x="${(i*bw+bw/2).toFixed(1)}" y="${(H-h-4).toFixed(1)}" text-anchor="middle" class="bv">${nn(x)}</text>`}).join('');
+  return `<div class="pchart"><svg viewBox="0 0 ${W} ${H+4}" preserveAspectRatio="none">${b}<line x1="0" x2="${W}" y1="${ly.toFixed(1)}" y2="${ly.toFixed(1)}" class="ln"/></svg>
+   <div class="pchart-k"><span><i class="k-ln"></i>Línea ${nn(L)}</span><span><i class="k-hit"></i>${over?'La pasó':'Abajo'}</span><span>Más reciente →</span></div></div>`}
+function probBars(pr){if(!pr||pr.fair==null)return '';const r=x=>Math.round(x*100);
+  return `<div class="pbars"><div><span>NURI</span><i style="--w:${r(pr.fair)}%" class="pf"></i><b>${r(pr.fair)}%</b></div>
+   ${pr.book!=null?`<div><span>${esc(pr.book_name||'Casa')}</span><i style="--w:${r(pr.book)}%" class="pb"></i><b>${r(pr.book)}%</b></div>`:''}</div>`}
+function formRow(t,on){const f=t.form||[];if(!f.length)return '';
+  return `<div class="frow${on?' sel':''}">${crest(t)}<b>${esc(t.short||t.name)}</b><div class="fchips">${f.map(x=>`<span class="ch ch-${x.r}"><b>${x.r}</b>${x.own!=null?`<small>${x.own}-${x.opp}</small>`:''}</span>`).join('')}</div></div>`}
+function predBar(an){const pr=an.pred,T=an.teams;if(!pr||pr.home==null)return '';const [c1]=tcol(T.home),[c2]=tcol(T.away);
+  const seg=(v,c,l)=>v?`<i style="flex:${v};background:${c}"><b>${Math.round(v)}%</b></i>`:'';
+  return `<div class="ghead">Modelo de ESPN</div><div class="pred">${seg(pr.home,'#'+c1)}${seg(pr.draw,'var(--muted)')}${seg(pr.away,'#'+c2)}</div>
+   <div class="pred-k"><span>${esc(T.home.short||T.home.name)}</span>${pr.draw?'<span>Empate</span>':''}<span>${esc(T.away.short||T.away.name)}</span></div>`}
+function seasonRows(an){const rows=an.rows||[];if(!rows.length)return '';const T=an.teams;
+  return `<div class="ghead">Temporada</div><div class="grp srows"><div class="sr-h"><span>${esc(T.home.short||T.home.name)}</span><span>${esc(T.away.short||T.away.name)}</span></div>
+   ${rows.map(r=>`<div class="sr"><b class="${r.better==='home'?'up':''}">${nn(r.home)}</b><span>${esc(r.label)}</span><b class="${r.better==='away'?'up':''}">${nn(r.away)}</b></div>`).join('')}</div>`}
+const LVTXT2={lock:'Todas las señales de NURI coinciden.',alta:'Casi todas las señales a favor.',media:'Hay valor, con menos señales a favor: apuesta más chica.',baja:'Valor justo y pocas señales: apuesta mínima.'};
+function anSheet(p){const an=p.an,r=RES[p.result]||RES.pending,T=an.teams||{},side=an.pick_side;
+  const forms=(T.home&&T.home.form&&T.home.form.length)||(T.away&&T.away.form&&T.away.form.length)?
+   `<div class="ghead">Últimos 5</div><div class="grp forms">${formRow(T.home,side==='home')}${formRow(T.away,side==='away')}</div>`:'';
+  openSheet(`<div class="sh-hero">${hero(p,an)}</div>
+   <h2 class="sh-bet">${esc(p.selection_label)}</h2>
+   ${quotes(p,an)}${meter(p)}<p class="note lvnote">${esc(LVTXT2[lvl(p)])}</p>
+   <div class="ghead">Probabilidad de que pase</div>${probBars(an.probs)}
+   ${an.series&&an.series.vals&&an.series.vals.length?`<div class="ghead">${esc(an.series.label)} · últimos ${an.series.vals.length} partidos</div>${bars10(an.series)}`:''}
+   ${an.tiles&&an.tiles.length?`<div class="ptiles">${an.tiles.map(([k,v])=>`<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>`:''}
+   ${forms}${predBar(an)}${seasonRows(an)}
+   <div class="ghead">Análisis</div><div class="pts">${pts(an.points)}</div>
+   <div class="card pk"><div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div></div>
+   <p class="note" style="text-align:center">${esc(r[0])}</p>`)}
+function pickCardOld(p){const lv=p.live&&p.live.status==='live';
   const age=cond(p)&&p.created_at?` · salió ${esc(ago(p.created_at))}`:'';
   return `<div class="card pk anim" data-pick="${esc(p.id)}">
    <div class="pk-h"><span>${esc(p.league)} · ${lv?'<span class="live">En vivo</span>':esc(when(p.start_ts))}${age}</span>${badge(p)}</div>
@@ -764,7 +955,7 @@ function vRes(){const W=weeks(),w=W[0],all=D.nuri.report.all_time||{};
 /* ================= hojas ================= */
 const LVTXT={lock:'Todas las señales de NURI coinciden. Es lo más fuerte que da.',alta:'Casi todas las señales a favor.',
   media:'Hay valor, pero con menos señales a favor: apuesta más chica.',baja:'Valor justo y pocas señales: apuesta mínima.'};
-function pickSheet(id){const p=allPicks().find(x=>x.id===id);if(!p)return;const r=RES[p.result]||RES.pending;
+function pickSheet(id){const p=allPicks().find(x=>x.id===id);if(!p)return;if(p.an)return anSheet(p);const r=RES[p.result]||RES.pending;
   const fin=p.result==='pending'?'':isProp(p)?(p.final_home!=null?`Terminó con ${p.final_home}. `:''):(p.final_home!=null?`Quedó ${p.final_home}-${p.final_away}. `:'');
   openSheet(`<h2>${esc(p.selection_label)}</h2><div class="sub-c">${isPlayer(p)?esc(p.market_label)+' · ':''}${esc(p.home)} vs ${esc(p.away)}<br>${esc(when(p.start_ts))}</div>
    <div class="lvline">${badge(p)}<span>${esc(LVTXT[lvl(p)])}</span></div>
