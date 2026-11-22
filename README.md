@@ -21,9 +21,14 @@ Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.p
      un jugador (lesión, cambio de rol, dinero fuerte), la línea vieja vale más que un volado y las casas mexicanas
      tardan en copiarla. Se califican con el boxscore oficial.
    - Máximo 6 al día (4 de props, 2 por liga), 1 por partido y 10 % del banco por día (¼ de Kelly, tope 3 % por pick).
-4. Califica los picks terminados, mide si le ganó a la línea de cierre (CLV) y se vuelve más exigente si no.
-5. Manda cada pick, su resultado y el resumen de los lunes al celular con [ntfy](https://ntfy.sh).
-6. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
+4. A cada pick le da una **confianza de 0 a 100** (Baja, Media, Alta, **LOCK**) con todas sus señales: precio con
+   ventaja, movimiento del mercado, estadísticas del partido, el predictor de ESPN y, en props, el historial real del
+   jugador partido por partido (aciertos contra la línea, minutos, envíos). LOCK = todas coinciden. La apuesta sugerida
+   baja con el nivel (¼ de Kelly × 1.0 / 0.8 / 0.6 / 0.4).
+5. Califica los picks terminados, mide si le ganó a la línea de cierre (CLV) y se vuelve más exigente si no, también
+   por nivel de confianza: si los LOCK no cumplen, cuesta más llegar a LOCK.
+6. Manda cada pick, su resultado y el resumen de los lunes al celular con [ntfy](https://ntfy.sh).
+7. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
    (GitHub Pages). El repositorio es público; los picks sólo se abren con el código.
 
 ## Secretos del repositorio
