@@ -188,15 +188,18 @@ def stats_agreement(d: dict | None, fam: str, row: dict, ml_p: float | None) -> 
 class PickBook:
     BASE = {"ev_sharp": 0.035, "ev_model": 0.07, "move": 0.04, "stats_b": 0.25}
     CONFIRM_S = int(os.getenv("NURI_CONFIRM_S") or 180)  # debe sostenerse 3 min (dos revisiones de la línea)
-    MAX_PER_DAY = 8
-    MAX_PROPS_DAY = 4        # props de jugadores (líneas viejas que las casas no han copiado)
-    MAX_PROPS_LEAGUE_DAY = 2 # y no más de 2 por liga al día (que no se los acabe el primer deporte del día)
+    MAX_PER_DAY = 16
+    MAX_PROPS_DAY = 4        # props de jugadores (líneas viejas que las casas no han copiado) de cualquier nivel...
+    MAX_PROPS_DAY_STRONG = 12  # ...y hasta 12 al día si son de confianza alta o lock
+    MAX_PROPS_LEAGUE_DAY = 2 # no más de 2 por liga al día (que no se los acabe el primer deporte del día)...
+    MAX_PROPS_LEAGUE_DAY_STRONG = 8  # ...salvo los de confianza alta o lock (domingo de NFL: 13 partidos)
     MIN_LEAD_S = 20 * 60     # no emitir si faltan menos de 20 min para empezar
     HORIZON_S = 48 * 3600    # partidos de las próximas 48 h
     MAX_EV = 0.15            # más que esto casi siempre es un momio viejo o una línea distinta
     MAX_MOVE = 0.12          # movimientos más grandes = noticia ya absorbida por todas las casas
     MAX_PER_LEAGUE_DAY = 2   # no amontonar picks de una misma liga (resultados correlacionados)
-    MAX_STAKE_DAY = 0.10     # nunca más del 10 % del banco en juego por día
+    MAX_PER_LEAGUE_DAY_STRONG = 4
+    MAX_STAKE_DAY = 0.20     # nunca más del 20 % del banco en juego por día (cada pick va a ¼ de Kelly)
 
     def __init__(self) -> None:
         self.seen: dict[str, float] = {}
@@ -463,9 +466,10 @@ class PickBook:
             if per_day.get(day, 0) >= self.MAX_PER_DAY:
                 continue
             lk = (day, r["league"])
-            if per_league.get(lk, 0) >= self.MAX_PER_LEAGUE_DAY:
-                continue
             level = self.level_of(c["conf_score"], cap="alta" if c["tier"] == "B" else None)
+            if per_league.get(lk, 0) >= (self.MAX_PER_LEAGUE_DAY_STRONG if level in ("lock", "alta")
+                                         else self.MAX_PER_LEAGUE_DAY):
+                continue
             stake = round(kelly_pct(c["odds"], r["w"], r["l"]) * STAKE_MULT[level], 4)
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue
@@ -619,7 +623,11 @@ class PickBook:
                 db.update_nuri_pick(p["id"], conf=lvl, conf_score=sc,
                                     stake_pct=round((p.get("stake_pct") or 0.01) * STAKE_MULT[lvl], 4))
         cands = [c for c in allc if c["p"] >= min_p]
-        taken = {p["event_id"] for p in existing if p.get("market_type") == "prop"}
+        taken: dict[str, list] = {}   # partido → jugadores con prop (máximo 2 por partido, el 2º sólo si es fuerte)
+        for p in existing:
+            if p.get("market_type") == "prop":
+                k = P.parse_key(p.get("market_key") or "")
+                taken.setdefault(p["event_id"], []).append(k[1] if k else "?")
         props_day: dict[str, int] = {}
         props_lg: dict[tuple, int] = {}
         for p in existing:
@@ -629,14 +637,18 @@ class PickBook:
                 props_lg[(day, p["league"])] = props_lg.get((day, p["league"]), 0) + 1
         for c in cands:
             e = c["ev_raw"]
-            if c["event_id"] in taken:
+            level = self.level_of(c.get("conf_score") or 0.0)
+            strong = level in ("lock", "alta")
+            had = taken.get(c["event_id"]) or []
+            if str(c["athlete"]) in had or len(had) >= (2 if strong else 1):
                 continue
             day = datetime.fromtimestamp(e["start_ts"], MX_TZ).date().isoformat()
-            if props_day.get(day, 0) >= self.MAX_PROPS_DAY or per_day.get(day, 0) >= self.MAX_PER_DAY:
+            if (props_day.get(day, 0) >= (self.MAX_PROPS_DAY_STRONG if strong else self.MAX_PROPS_DAY)
+                    or per_day.get(day, 0) >= self.MAX_PER_DAY):
                 continue
-            if props_lg.get((day, e.get("league")), 0) >= self.MAX_PROPS_LEAGUE_DAY:
+            if props_lg.get((day, e.get("league")), 0) >= (self.MAX_PROPS_LEAGUE_DAY_STRONG if strong
+                                                            else self.MAX_PROPS_LEAGUE_DAY):
                 continue
-            level = self.level_of(c.get("conf_score") or 0.0)
             stake = round(kelly_pct(c["min_odds"], c["p"], 1 - c["p"]) * STAKE_MULT[level], 4)
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue
@@ -656,7 +668,7 @@ class PickBook:
                 "reason": self._prop_reason(c), "conf": level, "conf_score": c.get("conf_score"),
             }
             if db.add_nuri_pick(rec):
-                taken.add(c["event_id"])
+                taken.setdefault(c["event_id"], []).append(str(c["athlete"]))
                 props_day[day] = props_day.get(day, 0) + 1
                 props_lg[(day, e.get("league"))] = props_lg.get((day, e.get("league")), 0) + 1
                 per_day[day] = per_day.get(day, 0) + 1

@@ -34,7 +34,7 @@ WORK = Path(os.getenv("NURI_WORK") or ROOT / "_work")
 WORK.mkdir(parents=True, exist_ok=True)
 OUT.mkdir(parents=True, exist_ok=True)
 os.environ["NURI_DB"] = str(WORK / "nuri.sqlite3")
-os.environ.setdefault("NURI_CONFIRM_S", "600")  # el pick debe sostenerse en dos corridas seguidas
+os.environ.setdefault("NURI_CONFIRM_S", "300")  # el pick debe sostenerse en dos corridas seguidas (~8 min)
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "cloud"))
 

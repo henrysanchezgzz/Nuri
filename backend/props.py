@@ -333,12 +333,20 @@ class PropsSource:
             eid = e["_espn_id"]
             async with sem:
                 try:
-                    r = await client.get(f"{CORE}/{sport}/leagues/{lg}/events/{eid}/competitions/{eid}/odds/100/propBets",
-                                         params={"lang": "en", "region": "us", "limit": 1000})
+                    url = f"{CORE}/{sport}/leagues/{lg}/events/{eid}/competitions/{eid}/odds/100/propBets"
+                    r = await client.get(url, params={"lang": "en", "region": "us", "limit": 1000})
                     if r.status_code == 404:
                         return                      # todavía no publican props de este partido
                     r.raise_for_status()
-                    self.props[e["id"]] = parse_props(r.json().get("items") or [])
+                    js = r.json()
+                    items = list(js.get("items") or [])
+                    # NFL / NBA traen más de 1000 líneas por partido: se bajan las páginas que falten
+                    for page in range(2, min(int(js.get("pageCount") or 1), 5) + 1):
+                        r2 = await client.get(url, params={"lang": "en", "region": "us", "limit": 1000, "page": page})
+                        if r2.status_code != 200:
+                            break
+                        items += r2.json().get("items") or []
+                    self.props[e["id"]] = parse_props(items)
                     for tid in (e.get("_home_id"), e.get("_away_id")):
                         if tid and now - self.rost_ts.get(str(tid), 0) > 20 * 3600:
                             await self._roster(client, sport, lg, str(tid))
