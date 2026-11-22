@@ -85,6 +85,51 @@ def power_devig(qs: list[float], target: float) -> list[float]:
     return [q ** k for q in qs]
 
 
+CROSS_MIN = 1.15        # o que Bet365 pague ≥ 15 % más que DraftKings por el mismo jugador
+
+
+def dk_prob(o: float) -> float:
+    """Probabilidad aproximada sin comisión de un momio de 'anota' de DraftKings. La comisión por jugador
+    crece en los momios largos (6 % en los favoritos, hasta 20 % en los muy largos)."""
+    m = min(0.20, 0.06 + 0.025 * max(0.0, o - 1.5))
+    return 1.0 / (o * (1 + m))
+
+
+def dk_names(feed, eid: str) -> dict:
+    """{nombre normalizado: {"name", "odds"}} con el 'anota' de DraftKings del partido."""
+    src = getattr(feed, "props_src", None)
+    dk = (getattr(src, "scorers", None) or {}).get(eid) or {}
+    from espn_facts import norm_person
+    out = {}
+    for aid, d in dk.items():
+        nm = src.name_of(aid) if src else None
+        if nm and d.get("any"):
+            out[norm_person(nm)] = {"name": nm, "odds": d["any"]}
+    return out
+
+
+def _match(dkn: dict, name: str):
+    from espn_facts import find_scorer_odds
+    try:
+        return find_scorer_odds(dkn, name)
+    except Exception:
+        return None
+
+
+def fgs_probs(b: dict, lam: float | None) -> dict:
+    """Probabilidad de anotar según el 'primer goleador' de Bet365 (método de potencia)."""
+    fgs = b.get("fgs") or {}
+    if not lam or len(fgs) < 10:
+        return {}
+    keys = list(fgs.keys())
+    q_raw = [1.0 / fgs[k]["odds"] for k in keys]
+    target = (1 - math.exp(-lam)) * (1 - OWN_GOALS)
+    if sum(q_raw) <= target:
+        return {}
+    q_fair = dict(zip(keys, power_devig(q_raw, target)))
+    return {k: 1 - math.exp(-(lam * q / (1 - math.exp(-lam)))) for k, q in q_fair.items()}
+
+
 def candidates(feed, now: float) -> list[dict]:
     out = []
     for eid, b in (getattr(feed, "b365", None) or {}).items():
@@ -93,44 +138,76 @@ def candidates(feed, now: float) -> list[dict]:
             continue
         if not (20 * 60 <= (e.get("start_ts") or 0) - now <= 30 * 3600):
             continue
-        anyt, fgs = b.get("scorers") or {}, b.get("fgs") or {}
-        common = [k for k in anyt if k in fgs and anyt[k].get("odds") and fgs[k].get("odds")]
-        if len(common) < MIN_PLAYERS or len(fgs) < 10:
+        anyt = b.get("scorers") or {}
+        if len(anyt) < MIN_PLAYERS:
             continue
         lam = total_lambda(e, b)
-        if not lam or not (1.2 <= lam <= 4.8):
+        if lam and not (1.2 <= lam <= 4.8):
             continue
-        keys = list(fgs.keys())
-        q_raw = [1.0 / fgs[k]["odds"] for k in keys]
-        target = (1 - math.exp(-lam)) * (1 - OWN_GOALS)
-        if sum(q_raw) <= target:
-            continue
-        q_fair = dict(zip(keys, power_devig(q_raw, target)))
-        rows = []
-        for k in common:
-            mu = lam * q_fair[k] / (1 - math.exp(-lam))
-            p = 1 - math.exp(-mu)
-            o = anyt[k]["odds"]
-            rows.append((k, p, o, p * o))
-        rhos = sorted(r[3] for r in rows)
-        med = rhos[len(rhos) // 2]
-        if not (0.65 <= med <= 1.02):           # si el patrón del partido es raro, mejor no
+        p_f = fgs_probs(b, lam)
+        # patrón del partido con el primer goleador: si es raro, no se usa
+        rf = sorted(p_f[k] * anyt[k]["odds"] for k in anyt if k in p_f and anyt[k].get("odds"))
+        med = rf[len(rf) // 2] if len(rf) >= MIN_PLAYERS else None
+        if med is not None and not (0.65 <= med <= 1.02):
+            p_f, med = {}, None
+        # segunda opinión: DraftKings
+        dkn = dk_names(feed, eid)
+        o_dk = {k: _match(dkn, anyt[k]["name"]) for k in anyt} if dkn else {}
+        rx = sorted(anyt[k]["odds"] / o_dk[k] for k in anyt if o_dk.get(k) and anyt[k].get("odds"))
+        med_x = rx[len(rx) // 2] if len(rx) >= MIN_PLAYERS else None
+        if not p_f and not med_x:
             continue
         inj = ((getattr(feed, "dossier", {}) or {}).get(eid) or {}).get("_inj_status") or {}
         inj_n = {norm(n): s for n, s in inj.items()}
-        for k, p, o, rho in rows:
-            ev_ = rho - 1
-            rel = rho / med
-            if ev_ < MIN_EV or rel < MIN_REL or not (1.8 <= o <= 5.5) or p < 0.17:
+        for k, a in anyt.items():
+            o = a.get("odds")
+            if not o or not (1.8 <= o <= 5.5):
                 continue
-            name = anyt[k]["name"]
-            if inj_n.get(norm(name)) in ("out", "doubtful"):
+            pf = p_f.get(k)
+            od = o_dk.get(k) if med_x else None
+            pd = dk_prob(od) if od else None
+            if pf is None and pd is None:
                 continue
-            conf = 50 + min(15.0, (ev_ - MIN_EV) * 150) + min(10.0, (rel - MIN_REL) * 60) + (4 if p >= 0.3 else 0)
-            out.append({"event_id": eid, "player": name, "key": k, "odds": o, "p": round(p, 4), "ev": round(ev_, 4),
-                        "rel": round(rel, 3), "lam": round(lam, 2), "conf_score": round(min(conf, 79.0), 1), "ev_raw": e})
+            if pf is not None and pd is not None and abs(pf - pd) > 0.10:
+                continue                          # las dos opiniones no cuadran: mejor no
+            p = pf if pd is None else pd if pf is None else (pf + pd) / 2
+            ev_ = p * o - 1
+            rel = (pf * o / med) if (pf is not None and med) else None
+            cross = (o / od) if od else None
+            pattern = (rel is not None and rel >= MIN_REL) or (cross is not None and cross >= CROSS_MIN
+                                                               and cross / med_x >= 1.08)
+            if ev_ < MIN_EV or not pattern or p < 0.17:
+                continue
+            if inj_n.get(norm(a["name"])) in ("out", "doubtful"):
+                continue
+            conf = (50 + min(15.0, (ev_ - MIN_EV) * 150) + (min(10.0, (rel - MIN_REL) * 60) if rel and rel >= MIN_REL else 0)
+                    + (min(10.0, (cross - CROSS_MIN) * 60) if cross and cross >= CROSS_MIN else 0)
+                    + (4 if p >= 0.3 else 0) + (5 if pf is not None and pd is not None and abs(pf - pd) <= 0.04 else 0))
+            out.append({"event_id": eid, "player": a["name"], "key": k, "odds": o, "p": round(p, 4), "ev": round(ev_, 4),
+                        "rel": round(rel, 3) if rel else None, "cross": round(cross, 3) if cross else None,
+                        "dk_odds": od, "lam": round(lam, 2) if lam else None, "conf_score": round(min(conf, 79.0), 1),
+                        "ev_raw": e})
     out.sort(key=lambda c: -c["conf_score"])
     return out
+
+
+def fair_scorers(feed, eid: str, b365: dict | None = None, top: int = 4) -> list[tuple]:
+    """Precio justo de 'anota en el partido' (los más probables de cada lado): [(jugador, prob)]."""
+    dkn = dk_names(feed, eid)
+    if len(dkn) < MIN_PLAYERS:
+        return []
+    e = (getattr(feed, "raw", {}) or {}).get(eid) or {}
+    p_f = fgs_probs(b365 or {}, total_lambda(e, b365)) if b365 else {}
+    rows = []
+    for k, d in dkn.items():
+        p = dk_prob(d["odds"])
+        if p_f:
+            pf = p_f.get(k)   # mismas claves (nombre normalizado) que el primer goleador de Bet365
+            if pf is not None and abs(pf - p) <= 0.10:
+                p = (p + pf) / 2
+        rows.append((d["name"], p))
+    rows.sort(key=lambda r: -r[1])
+    return [r for r in rows if r[1] >= 0.15][: top * 2]
 
 
 def grade(p: dict, summary: dict) -> tuple[str, float] | None:

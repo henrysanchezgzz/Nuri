@@ -548,6 +548,13 @@ body.aero .lock .lk-t,body.aero .lock .lk-s,body.aero .lock .lk-n{color:#0b3552}
 .fl div+div{border-top:1px solid var(--line)}
 .fl span{color:var(--ink);font-weight:500;min-width:0}
 .fl b{font-weight:800;font-variant-numeric:tabular-nums;flex:none}
+.fpl{margin-top:4px;border-top:1px solid var(--line)}
+.fpl summary{list-style:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--accent);padding:11px 2px 9px;display:flex;justify-content:space-between;align-items:center}
+.fpl summary::-webkit-details-marker{display:none}
+.fpl summary::after{content:'';width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin:-4px 4px 0 0;transition:transform .2s}
+.fpl[open] summary::after{transform:rotate(-135deg);margin-top:4px}
+.fpl .fl{margin-top:0}
+.fpn{margin:12px 2px 0;font-size:13px;font-weight:700;color:var(--ink-2)}
 
 </style>
 </head>
@@ -691,16 +698,32 @@ function vPicks(){const n=D.nuri,t=now();
   return h}
 
 /* ================= precio justo ================= */
-function vFair(){return `<div class="search">${ic('search')}<input id="fq" placeholder="Busca tu partido o liga" value="${esc(fq)}" enterkeyhint="search" autocomplete="off"></div>
+function vFair(){return `<div class="search">${ic('search')}<input id="fq" placeholder="Busca partido, liga o jugador" value="${esc(fq)}" enterkeyhint="search" autocomplete="off"></div>
   <div id="flist">${fairList()}</div>`}
+const isSc=pl=>pl.every(r=>r[1]==='Anota en el partido');
+function plRows(pl,withName){let h='',last=null;
+  if(isSc(pl))return pl.map(r=>`<div><span>${esc(r[0])}</span><b>${f2(r[2])}</b></div>`).join('');
+  for(const r of pl){if(withName&&r[0]!==last){h+=`<p class="fpn">${esc(r[0])}</p>`;last=r[0]}
+    h+=`<div><span>${esc(r[1])}</span><b>${f2(r[2])}</b></div>`}
+  return h}
 function fairList(){const q=fq.trim().toLowerCase(),t=now();
-  const L=(D.fair||[]).filter(g=>g.start_ts>t&&(!q||`${g.home} ${g.away} ${g.league}`.toLowerCase().includes(q)));
-  if(!L.length)return `<div class="card empty">${(D.fair||[]).length?'No encontré ese partido.':'Todavía no hay partidos con línea de mercado.'}</div>`;
-  let h='',day=null;
+  const all=(D.fair||[]).filter(g=>g.start_ts>t);
+  let ph='';
+  if(q.length>=3){const by={};
+    for(const g of all)for(const r of g.pl||[])if(r[0].toLowerCase().includes(q)){const k=r[0]+'|'+g.id;(by[k]=by[k]||{g,n:r[0],rows:[]}).rows.push(r)}
+    ph=Object.values(by).slice(0,12).map(x=>`<div class="card fg anim"><div class="pk-h"><span>${esc(x.g.league)} · ${hm(x.g.start_ts)}</span></div>
+      <div class="who"><b>${esc(x.n)}</b><small>${esc(x.g.home)} vs ${esc(x.g.away)}</small></div>
+      <div class="fl">${isSc(x.rows)?x.rows.map(r=>`<div><span>Anota en el partido</span><b>${f2(r[2])}</b></div>`).join(''):plRows(x.rows,false)}</div></div>`).join('')}
+  const L=all.filter(g=>!q||`${g.home} ${g.away} ${g.league}`.toLowerCase().includes(q));
+  if(!L.length&&!ph)return `<div class="card empty">${all.length?'No encontré ese partido ni ese jugador.':'Todavía no hay partidos con línea de mercado.'}</div>`;
+  let h=ph?`<div class="sec">Jugadores</div>${ph}`:'',day=null;
+  if(ph&&L.length)h+=`<div class="sec">Partidos</div>`;
   for(const g of L){const k=dayKey(g.start_ts);if(k!==day){h+=`<div class="dayh">${esc(when(g.start_ts).split(' · ')[0])}</div>`;day=k}
+    const pl=g.pl||[],np=new Set(pl.map(r=>r[0])).size;
     h+=`<div class="card fg anim"><div class="pk-h"><span>${esc(g.league)} · ${hm(g.start_ts)}</span></div>
      <div class="ft"><div>${logo(g.home_logo)}<span>${esc(g.home)}</span></div><div>${logo(g.away_logo)}<span>${esc(g.away)}</span></div></div>
-     <div class="fl">${g.sels.map(s=>`<div><span>${esc(s.s)}</span><b>${f2(s.o)}</b></div>`).join('')}</div></div>`}
+     <div class="fl">${g.sels.map(s=>`<div><span>${esc(s.s)}</span><b>${f2(s.o)}</b></div>`).join('')}</div>
+     ${pl.length?`<details class="fpl"><summary>${isSc(pl)?'Goleadores':`Jugadores · ${np}`}</summary><div class="fl">${plRows(pl,true)}</div></details>`:''}</div>`}
   return h}
 
 /* ================= resultados ================= */

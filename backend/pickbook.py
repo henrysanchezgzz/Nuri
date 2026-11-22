@@ -546,7 +546,10 @@ class PickBook:
                 "selection_label": "Anota en el partido", "book": "Bet365", "odds": c["odds"],
                 "min_odds": round(1.02 / c["p"], 2), "p": c["p"], "ev": c["ev"], "score": c["conf_score"] / 100,
                 "stats_score": 0.0, "move": None, "stake_pct": stake,
-                "reason": ("Bet365 lo paga más alto de lo que vale: con los goles que se esperan en el partido y "
+                "reason": (f"Bet365 lo paga más alto de lo que vale: DraftKings lo tiene en {c['dk_odds']:.2f}"
+                           + (" y el primer goleador de la misma Bet365 dice que debería pagar menos." if c.get("rel")
+                              else ".")) if c.get("cross") and c["cross"] >= 1.15 and c.get("dk_odds") else
+                          ("Bet365 lo paga más alto de lo que vale: con los goles que se esperan en el partido y "
                            "lo que la misma Bet365 le da como primer goleador, debería pagar menos."),
                 "conf": level, "conf_score": c["conf_score"],
             }

@@ -206,6 +206,28 @@ def diagnose(pb, result, feed, ps, now: float) -> dict:
                              "conf": c.get("conf_score"), "mv": round(c.get("mv") or 0, 3),
                              "start_h": round((r.get("start_ts", now) - now) / 3600, 1),
                              "seen_min": round((now - pb.seen.get(r["id"], now)) / 60, 1)})
+    try:   # goleadores: Bet365 contra DraftKings y contra el primer goleador (para calibrar)
+        import scorers as S
+        out["scorers"] = []
+        for eid, b in list((feed.b365 or {}).items())[:14]:
+            e = feed.raw.get(eid) or {}
+            anyt = (b or {}).get("scorers") or {}
+            if not anyt:
+                continue
+            lam = S.total_lambda(e, b)
+            pf = S.fgs_probs(b, lam)
+            dkn = S.dk_names(feed, eid)
+            rows = []
+            for k, a in sorted(anyt.items(), key=lambda kv: kv[1]["odds"])[:14]:
+                od = S._match(dkn, a["name"]) if dkn else None
+                rows.append([a["name"], a["odds"], od, round(pf[k], 3) if k in pf else None,
+                             round(S.dk_prob(od), 3) if od else None])
+            out["scorers"].append({"game": game(e), "lam": round(lam, 2) if lam else None, "n_dk": len(dkn), "rows": rows})
+        out["scorer_cands"] = [{k: c.get(k) for k in ("player", "odds", "p", "ev", "rel", "cross", "dk_odds", "conf_score")}
+                               for c in S.candidates(feed, now)]
+        out["dk_scorer_events"] = {eid: len(v) for eid, v in (getattr(ps, "scorers", {}) or {}).items()}
+    except Exception as exc:
+        out["scorers_err"] = repr(exc)
     for p in db.list_nuri_picks(since_ts=now - 3 * 86400):
         out["picks"].append({k: p.get(k) for k in ("id", "tier", "league", "market_label", "selection_label", "conf",
                                                     "conf_score", "stake_pct", "result", "start_ts", "created_at",

@@ -174,7 +174,38 @@ def fair_sheet(rows: dict, feed, now: float, horizon_h: float = 36) -> list[dict
                         "home_logo": (ev.get("home") or {}).get("logo"), "away_logo": (ev.get("away") or {}).get("logo"),
                         "start_ts": ev.get("start_ts") or rs[0].get("start_ts"), "sels": sels[:8]})
     out.sort(key=lambda x: x["start_ts"] or 0)
-    return out[:160]
+    out = out[:160]
+    try:
+        attach_players(out, feed)
+    except Exception as exc:  # los jugadores son un extra: nunca tumban la hoja
+        print(f"[precio justo] jugadores: {type(exc).__name__}: {exc}")
+    return out
+
+
+def attach_players(games: list[dict], feed) -> None:
+    """Precio justo por jugador: líneas Más/Menos de DraftKings (NBA, NFL, NHL) y 'anota' en fútbol."""
+    src = getattr(feed, "props_src", None)
+    if src is None:
+        return
+    import scorers as S
+    for g in games:
+        pl = []
+        for pr in ((getattr(src, "props", {}) or {}).get(g["id"]) or {}).values():
+            po = pr.get("p_over")
+            name = src.name_of(pr["athlete"])
+            if po is None or not name or not (0.12 <= po <= 0.88):
+                continue
+            for side, p in (("Más", po), ("Menos", 1 - po)):
+                desde = 1.04 / p                    # 4 % de colchón sobre lo justo
+                if 1.2 <= desde <= 6:
+                    pl.append([name, f"{side} de {pr['line']:g} {pr['label']}", round(desde + 0.004, 2)])
+        pl.sort(key=lambda r: (r[0], r[1].split(" de ", 1)[-1], not r[1].startswith("Más")))
+        if not pl and (getattr(src, "scorers", {}) or {}).get(g["id"]):
+            b = (getattr(feed, "b365", {}) or {}).get(g["id"])
+            for name, p in S.fair_scorers(feed, g["id"], b):     # del más probable al menos
+                pl.append([name, "Anota en el partido", round(1.06 / p + 0.004, 2)])
+        if pl:
+            g["pl"] = pl
 
 
 def now_ts() -> float:

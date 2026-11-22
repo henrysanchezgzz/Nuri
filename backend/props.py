@@ -32,7 +32,7 @@ SITE = "https://site.api.espn.com/apis/site/v2/sports"
 UA = {"User-Agent": "Mozilla/5.0 (NURI)"}
 
 # deporte del feed → (deporte ESPN, liga)
-LEAGUES = {"nba": ("basketball", "nba"), "nfl": ("football", "nfl")}
+LEAGUES = {"nba": ("basketball", "nba"), "nfl": ("football", "nfl"), "nhl": ("hockey", "nhl")}
 
 # tipo de DraftKings → (clave, etiqueta, dispersión σ ≈ a·línea + b, paso mínimo de movimiento)
 STATS: dict[str, tuple] = {
@@ -53,7 +53,16 @@ STATS: dict[str, tuple] = {
     "Total Passing Attempts (incl. overtime)": ("pass_att", "pases intentados", (0.15, 3.0), 1.5),
     "Total Carries (incl. overtime)": ("carries", "acarreos", (0.25, 2.0), 1.0),
 }
-LABEL = {v[0]: v[1] for v in STATS.values()}
+# NHL: mismos nombres de DraftKings que la NBA ("Total Points"), por eso va aparte. Conteos bajos → Poisson.
+STATS_NHL: dict[str, tuple] = {
+    "Total Shots on Goal": ("sog", "tiros a gol", (0.26, 1.0), 1.0),
+    "Total Points": ("hpts", "puntos (goles + asistencias)", (0.5, 0.6), 1.0),
+    "Total Assists": ("hast", "asistencias", (0.5, 0.55), 1.0),
+}
+POISSON = {"sog", "hpts", "hast"}
+# fútbol: DraftKings publica "anota en el partido" de estas ligas (sirve de segunda opinión y para el precio justo)
+SOCCER_PROPS = {"eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "mex.1", "uefa.champions", "usa.1"}
+LABEL = {v[0]: v[1] for v in list(STATS.values()) + list(STATS_NHL.values())}
 # escaleras "X o más" de DraftKings: sirven para comprobar cuál del par es el 'Más'
 MILESTONES = {"pts": "Points Milestones", "reb": "Rebounds Milestones", "ast": "Assists Milestones",
               "3pm": "3-Point Field Goals Milestones", "pra": "Points + Assists + Rebounds Milestones",
@@ -63,6 +72,7 @@ MILESTONES = {"pts": "Points Milestones", "reb": "Rebounds Milestones", "ast": "
               "rec": "Receptions Milestones", "rush_rec_yds": "Rushing + Receiving Yards Milestones",
               "pass_att": "Passing Attempts Milestones", "carries": "Rushing Attempts Milestones"}
 MS_KEY = {v: k for k, v in MILESTONES.items()}
+MS_KEY_NHL = {"Shots on Goal Milestones": "sog", "Points Milestones": "hpts", "Assists Milestones": "hast"}
 
 WEB = "https://site.web.api.espn.com/apis/common/v3/sports"
 GL_KEEP_S = 12 * 3600  # historial de partidos del jugador: se vuelve a bajar cada 12 h
@@ -129,21 +139,22 @@ def norm(s: str) -> str:
     return re.sub(r"[^a-z ]", "", s).strip()
 
 
-def parse_props(items: list[dict]) -> dict[str, dict]:
+def parse_props(items: list[dict], league: str = "") -> dict[str, dict]:
     """Agrupa las líneas Más/Menos de cada jugador. ESPN manda cada par seguido: primero el 'Más'
     y luego el 'Menos' (comprobado contra las escaleras de DraftKings)."""
+    stats_map, ms_map = (STATS_NHL, MS_KEY_NHL) if league == "nhl" else (STATS, MS_KEY)
     groups: dict[tuple, list] = {}
     ladder: dict[tuple, float] = {}
     for it in items:
         tname = (it.get("type") or {}).get("name") or ""
-        if tname in MS_KEY:
+        if tname in ms_map:
             aid = _aid(it)
             k = _f(((it.get("current") or {}).get("target") or {}).get("value"))
             d = _f(((it.get("odds") or {}).get("decimal") or {}).get("value"))
             if aid and k is not None and d:
-                ladder[(aid, MS_KEY[tname], k)] = d
+                ladder[(aid, ms_map[tname], k)] = d
             continue
-        if tname not in STATS:
+        if tname not in stats_map:
             continue
         aid = _aid(it)
         cur = _f(((it.get("current") or {}).get("target") or {}).get("value"))
@@ -152,7 +163,7 @@ def parse_props(items: list[dict]) -> dict[str, dict]:
         groups.setdefault((aid, tname, cur), []).append(it)
     out: dict[str, dict] = {}
     for (aid, tname, cur), its in groups.items():
-        key, label, sig, step = STATS[tname]
+        key, label, sig, step = stats_map[tname]
         first = its[0]
         opn = _f(((first.get("open") or {}).get("target") or {}).get("value"))
         dec = [(_f(((x.get("odds") or {}).get("decimal") or {}).get("value")),
@@ -166,14 +177,47 @@ def parse_props(items: list[dict]) -> dict[str, dict]:
                 p_over_open = oo / (oo + ou)
         # ¿el primero es el 'Más'? Se compara con la escalera "X o más" (Más de 10.5 ≈ 11 o más)
         ms = ladder.get((aid, key, float(math.ceil(cur))))
+        o_now = [d[0] for d in dec] if len(dec) == 2 else [None, None]
+        o_open = [d[1] for d in dec] if len(dec) == 2 else [None, None]
         if p_over is not None and ms and abs(dec[1][0] - ms) + 0.10 < abs(dec[0][0] - ms):  # sólo si es claro
             p_over = 1 - p_over
             p_over_open = (1 - p_over_open) if p_over_open is not None else None
+            o_now, o_open = o_now[::-1], o_open[::-1]
         upd = max(_ts(x.get("lastUpdated")) for x in its)
+        sigma = math.sqrt(max(cur, 0.5) + 0.5) if key in POISSON else max(sig[0] * cur + sig[1], 0.5)
         out[f"{key}:{aid}"] = {"athlete": aid, "stat": key, "label": label, "line": cur, "open": opn,
                                "p_over": p_over, "p_over_open": p_over_open, "updated": upd,
-                               "sigma": max(sig[0] * cur + sig[1], 0.5), "step": step}
+                               "sigma": sigma, "step": step, "o_now": o_now, "o_open": o_open,
+                               "dist": "poisson" if key in POISSON else "normal"}
     return out
+
+
+def _yes_price(it: dict, which: str) -> float | None:
+    """Momio de un mercado de 'sí' (anota, etc.). En fútbol viene en current/open.over.decimal; en NHL en odds.decimal."""
+    v = (it.get(which) or {}).get("over")
+    if isinstance(v, dict) and _f(v.get("decimal")):
+        return _f(v.get("decimal"))
+    od = (it.get("odds") or {}).get("decimal") or {}
+    return _f(od.get("value" if which == "current" else "open"))
+
+
+def parse_scorers(items: list[dict]) -> dict[str, dict]:
+    """Fútbol: 'anota en el partido' y 'anota 2 o más' de DraftKings, por jugador (id de ESPN)."""
+    out: dict[str, dict] = {}
+    for it in items:
+        t = (it.get("type") or {}).get("name") or ""
+        if t not in ("Anytime Goalscorer", "To Score 2+ Goals"):
+            continue
+        aid = _aid(it)
+        cur = _yes_price(it, "current")
+        if not aid or not cur or cur <= 1.0:
+            continue
+        d = out.setdefault(aid, {})
+        if t == "Anytime Goalscorer":
+            d["any"], d["any_open"] = round(cur, 3), _yes_price(it, "open")
+        else:
+            d["two"] = round(cur, 3)
+    return {k: v for k, v in out.items() if v.get("any")}
 
 
 def _split_first(v) -> float | None:
@@ -219,6 +263,12 @@ def gl_values(games: list, stat: str) -> list[float]:
         elif stat == "rush_rec_yds":
             ry, rc = v("rushingYards"), v("receivingYards")
             x = None if ry is None and rc is None else (ry or 0.0) + (rc or 0.0)
+        elif stat == "sog":
+            x = v("shotsTotal")
+        elif stat == "hpts":
+            x = v("points") if "goals" in g else None
+        elif stat == "hast":
+            x = v("assists") if "goals" in g else None
         else:
             x = None
         if x is not None:
@@ -247,16 +297,26 @@ def parse_gamelog(js: dict) -> list:
     return games[:20]
 
 
+def _mins(v) -> float | None:
+    """'18:42' → 18.7 minutos."""
+    try:
+        m, s_ = str(v).split(":")
+        return int(m) + int(s_) / 60
+    except (ValueError, TypeError):
+        return None
+
+
 def usage_trend(games: list, stat: str) -> float | None:
     """¿Juega más (o le tiran más) últimamente? Minutos en NBA; envíos en receptores; acarreos en corredores.
     Devuelve la diferencia relativa: últimos 4 contra la temporada."""
     key = {"pts": "minutes", "reb": "minutes", "ast": "minutes", "3pm": "minutes", "pra": "minutes", "pr": "minutes",
            "pa": "minutes", "ra": "minutes", "rec": "receivingTargets", "rec_yds": "receivingTargets",
            "rush_yds": "rushingAttempts", "carries": "rushingAttempts", "rush_rec_yds": "rushingAttempts",
-           "pass_yds": "passingAttempts", "pass_att": "passingAttempts", "pass_cmp": "passingAttempts"}.get(stat)
+           "pass_yds": "passingAttempts", "pass_att": "passingAttempts", "pass_cmp": "passingAttempts",
+           "sog": "timeOnIcePerGame", "hpts": "timeOnIcePerGame", "hast": "timeOnIcePerGame"}.get(stat)
     if not key:
         return None
-    vals = [_f(g.get(key)) for _, g in games]
+    vals = [_mins(g.get(key)) if key == "timeOnIcePerGame" else _f(g.get(key)) for _, g in games]
     vals = [v for v in vals if v is not None]
     if len(vals) < 6:
         return None
@@ -278,9 +338,36 @@ def form_of(games: list, stat: str, line: float, side: str) -> dict | None:
             "mean5": sum(vals[:5]) / min(5, n)}
 
 
+def poisson_over(m: float, line: float) -> float:
+    """P(X > line) para X ~ Poisson(m), con línea .5."""
+    k = math.floor(line)
+    term, cdf = math.exp(-m), 0.0
+    for i in range(0, k + 1):
+        if i:
+            term *= m / i
+        cdf += term
+    return max(0.0, 1.0 - cdf)
+
+
+def poisson_mean(line: float, p_over: float) -> float:
+    """La media que hace que P(X > line) = p_over (bisección)."""
+    lo, hi = 0.01, 40.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if poisson_over(mid, line) < p_over:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
 def price_line(pr: dict, line: float, side: str) -> float:
     """Probabilidad de que el jugador quede del lado `side` de `line`, con el mercado actual de
     DraftKings: la línea actual es la mediana (ajustada por el momio sin comisión si lo hay)."""
+    if pr.get("dist") == "poisson":
+        m = poisson_mean(pr["line"], pr["p_over"] if pr.get("p_over") else 0.5)
+        over = poisson_over(m, line)
+        return over if side == "over" else 1 - over
     m = pr["line"] + pr["sigma"] * phi_inv(pr["p_over"] if pr.get("p_over") else 0.5)
     over = 1 - phi((line - m) / pr["sigma"])
     return over if side == "over" else 1 - over
@@ -295,6 +382,7 @@ class PropsSource:
         self.rost_ts: dict[str, float] = st.get("rost_ts") or {}   # equipo → última descarga
         self.hist: dict[str, list] = st.get("hist") or {}          # clave → [línea, ts_del_cambio, ts_visto, ts_primera_vez]
         self.props: dict[str, dict] = {}                           # evento → {clave: prop}
+        self.scorers: dict[str, dict] = {}                         # evento (fútbol) → {atleta: {"any", "any_open", "two"}}
         self.gl: dict[str, dict] = st.get("gl") or {}              # atleta → {"ts", "lg", "games"}
         self.status = {"ok": False, "detail": "sin revisar", "events": 0, "props": 0}
 
@@ -303,7 +391,8 @@ class PropsSource:
         names = {k: v for k, v in self.names.items() if now - (v[2] if len(v) > 2 else now) < 21 * 86400}
         hist = {k: v for k, v in self.hist.items() if now - v[2] < 36 * 3600}
         gl = {k: v for k, v in self.gl.items() if now - v.get("ts", 0) < 3 * 86400}
-        return {"names": names, "rost_ts": self.rost_ts, "hist": hist, "gl": gl}
+        rost = {k: v for k, v in self.rost_ts.items() if ":" in k and now - v < 21 * 86400}
+        return {"names": names, "rost_ts": rost, "hist": hist, "gl": gl}
 
     async def _json(self, client: httpx.AsyncClient, url: str, params: dict | None = None):
         r = await client.get(url, params=params)
@@ -317,19 +406,19 @@ class PropsSource:
             for a in (grp.get("items") if isinstance(grp, dict) and "items" in grp else [grp]):
                 if isinstance(a, dict) and a.get("id"):
                     self.names[str(a["id"])] = [a.get("displayName") or a.get("fullName") or "", team_id, now]
-        self.rost_ts[team_id] = now
+        self.rost_ts[f"{lg}:{team_id}"] = now
 
     async def refresh(self, feed, now: float | None = None, concurrency: int = 8) -> None:
-        """Una pasada: props de los partidos de NBA y NFL de las próximas 30 h."""
+        """Una pasada: props de los partidos de NBA, NFL y NHL (y goleadores de fútbol) de las próximas 30 h."""
         now = now or time.time()
-        evs = [e for e in feed.raw.values() if e.get("_league") in LEAGUES and e["status"] == "pre"
-               and 0 < e["start_ts"] - now < MAX_START_S]
+        evs = [e for e in feed.raw.values() if (e.get("_league") in LEAGUES or e.get("_league") in SOCCER_PROPS)
+               and e["status"] == "pre" and 0 < e["start_ts"] - now < MAX_START_S]
         sem = asyncio.Semaphore(concurrency)
         errs = 0
 
         async def one(e):
             nonlocal errs
-            sport, lg = LEAGUES[e["_league"]]
+            sport, lg = LEAGUES.get(e["_league"]) or ("soccer", e["_league"])
             eid = e["_espn_id"]
             async with sem:
                 try:
@@ -346,9 +435,15 @@ class PropsSource:
                         if r2.status_code != 200:
                             break
                         items += r2.json().get("items") or []
-                    self.props[e["id"]] = parse_props(items)
-                    for tid in (e.get("_home_id"), e.get("_away_id")):
-                        if tid and now - self.rost_ts.get(str(tid), 0) > 20 * 3600:
+                    if e["_league"] in SOCCER_PROPS:
+                        sc = parse_scorers(items)
+                        if not sc:
+                            return
+                        self.scorers[e["id"]] = sc
+                    else:
+                        self.props[e["id"]] = parse_props(items, e["_league"])
+                    for tid in (e.get("_home_id"), e.get("_away_id")):   # el id de equipo se repite entre deportes
+                        if tid and now - self.rost_ts.get(f"{lg}:{tid}", 0) > 20 * 3600:
                             await self._roster(client, sport, lg, str(tid))
                 except Exception as exc:  # una liga sin props no tumba la corrida
                     errs += 1
@@ -372,8 +467,10 @@ class PropsSource:
                         self.hist[hk] = [pr["line"], now, now, h[3]]
                     else:
                         h[2] = now
-        self.status = {"ok": n > 0 or not evs, "detail": f"{n} líneas de jugadores en {len(self.props)} partidos",
-                       "events": len(self.props), "props": n, "errors": errs}
+        ns = sum(len(v) for v in self.scorers.values())
+        self.status = {"ok": n > 0 or not evs, "detail": f"{n} líneas de jugadores en {len(self.props)} partidos"
+                       + (f" · {ns} goleadores en {len(self.scorers)} partidos de fútbol" if ns else ""),
+                       "events": len(self.props), "props": n, "errors": errs, "scorers": ns}
 
     async def enrich(self, feed, now: float | None = None, limit: int = 30) -> int:
         """Baja el historial partido por partido de los jugadores que podrían ser pick (con caché)."""
@@ -461,8 +558,14 @@ class PropsSource:
                     continue
                 p = cand["p"]
                 min_odds = round((1 + EDGE) / p, 2)
+                # lo que pagaba DraftKings ANTES en esa línea es lo que todavía paga una casa que no se ha
+                # movido: si eso no llega al momio mínimo, aunque la encuentres no conviene
+                o_old = (pr.get("o_open") or [None, None])[0 if cand["side"] == "over" else 1]
+                if o_old and o_old < min_odds:
+                    continue
                 z = abs((pr["line"] - (pr["open"] if pr["open"] is not None else pr["line"]))) / prx["sigma"]
                 conf = 40 + (p - MIN_P) * 150 + (6 if h[1] else 0) + (5 if z >= 0.5 else 0) - (5 if st == "questionable" else 0)
+                conf -= 0 if o_old else 5     # sin el momio de antes no sabemos si la casa que no se movió conviene
                 notes = []
                 # el mercado sigue cargado hacia el mismo lado aun con la línea nueva: muy convencido
                 if cand["kind"] == "move" and pr.get("p_over") is not None:
@@ -480,7 +583,7 @@ class PropsSource:
                     conf += 4 if good else -6
                     notes.append(f"la pasó en {form['hits']} de sus últimos {form['n10']}" if cand["side"] == "over"
                                  else f"se quedó abajo en {form['hits']} de sus últimos {form['n10']}")
-                cand.update({"event_id": eid, "athlete": pr["athlete"], "player": name, "stat": pr["stat"],
+                cand.update({"event_id": eid, "athlete": pr["athlete"], "player": name, "stat": pr["stat"], "o_old": o_old,
                              "label": pr["label"], "now_line": pr["line"], "open_line": pr["open"],
                              "min_odds": min_odds, "ev": round(p * min_odds - 1, 4), "form": form, "notes": notes,
                              "conf_score": round(min(conf, 100), 1),
@@ -544,6 +647,21 @@ def stat_from_box(summary: dict, league: str, athlete: str, stat: str) -> float 
             return None
         vals["rush_rec_yds"] = vals["rush_yds"] + vals["rec_yds"]
         return vals.get(stat)
+    if league == "nhl":
+        for team in players:
+            for grp in team.get("statistics") or []:
+                keys = grp.get("keys") or []
+                if "shotsTotal" not in keys:
+                    continue                     # porteros
+                for a in grp.get("athletes") or []:
+                    if str((a.get("athlete") or {}).get("id")) != str(athlete):
+                        continue
+                    if not a.get("stats"):
+                        return None
+                    v = dict(zip(keys, a["stats"]))
+                    g_, a_ = _num(v.get("goals")) or 0.0, _num(v.get("assists")) or 0.0
+                    return {"sog": _num(v.get("shotsTotal")) or 0.0, "hpts": g_ + a_, "hast": a_}.get(stat)
+        return None
     return None
 
 
