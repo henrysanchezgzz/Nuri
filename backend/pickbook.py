@@ -326,10 +326,11 @@ class PickBook:
                     score = best["ev"] * (1 + 0.5 * ss) * (1.3 if stale_book else 1.0)
                     cand = {"tier": "A", "book": best["book"], "odds": best["odds"], "ev": best["ev"],
                             "score": score, "stale_book": stale_book}
-            if cand is None and r["confidence"] == "alta" and r.get("move") is not None:
-                # con historial usamos el movimiento de las últimas horas (más útil para encontrar casas
-                # que no han ajustado); sin historial, el de la apertura.
-                mv = sig["ref_move"] if sig["span_h"] >= 1.5 else r["move"]
+            if cand is None and r["confidence"] == "alta" and r.get("move") is not None and sig["span_h"] >= 1.5:
+                # Sólo con el historial propio (≥ 1.5 h): un movimiento que está pasando AHORA es el que las
+                # casas mexicanas todavía no ajustan. El movimiento desde la apertura puede tener días y ya
+                # estar absorbido en todas partes.
+                mv = sig["ref_move"]
                 pred = (d or {}).get("predictor")
                 pred_ok = True
                 if pred and r["selection"] in ("home", "away") and ml_p is not None:
