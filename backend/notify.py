@@ -39,6 +39,7 @@ class Notifier:
         self.sent = 0
         self.last_error: str | None = None
         self.last_ok: float | None = None
+        self.click: str | None = None   # al tocar el aviso se abre esta dirección (la app en la nube)
 
     # ------------------------------------------------------------------ cola (se puede llamar desde hilos)
     def queue(self, title: str, message: str, tags: list[str] | None = None, priority: int = 3,
@@ -46,8 +47,8 @@ class Notifier:
         msg = {"topic": self.topic, "title": title, "message": message, "priority": priority}
         if tags:
             msg["tags"] = tags
-        if click:
-            msg["click"] = click
+        if click or self.click:
+            msg["click"] = click or self.click
         with self._lock:
             self._q.append({"msg": msg, "tries": 0, "next": 0.0})
 
@@ -83,7 +84,7 @@ class Notifier:
     # ------------------------------------------------------------------ persistencia (versión en la nube)
     def dump(self) -> list[dict]:
         with self._lock:
-            return [dict(x["msg"]) for x in self._q]
+            return [{k: v for k, v in x["msg"].items() if k != "topic"} for x in self._q]
 
     def load(self, msgs: list[dict]) -> None:
         for m in msgs or []:

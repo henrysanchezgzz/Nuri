@@ -1,0 +1,85 @@
+# NURI · 누리 — corre solo en la nube cada 15 minutos (no necesita tu laptop).
+# Baja datos reales, busca picks de valor, califica los terminados, te avisa al cel
+# y publica la app con los datos cifrados en la rama "site" (GitHub Pages).
+name: NURI
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["backend/**", "cloud/**", "app/**", ".github/workflows/nuri.yml"]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: nuri
+  cancel-in-progress: false
+
+jobs:
+  nuri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: cloud/requirements.txt
+
+      - name: Instalar
+        run: pip install -q -r cloud/requirements.txt
+
+      - name: Traer el estado anterior
+        run: |
+          if git fetch -q --depth=1 origin site; then
+            git show FETCH_HEAD:state.enc > state.enc 2>/dev/null || rm -f state.enc
+            git show FETCH_HEAD:data.enc > prev_data.enc 2>/dev/null || rm -f prev_data.enc
+          fi
+          ls -la state.enc prev_data.enc 2>/dev/null || echo "sin estado previo"
+
+      - name: Correr NURI
+        id: run
+        continue-on-error: true
+        env:
+          NURI_CODE: ${{ secrets.NURI_CODE }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ODDSIO_KEY: ${{ secrets.ODDSIO_KEY }}
+        run: |
+          export NURI_APP_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/"
+          python cloud/run.py
+
+      - name: Publicar app y datos
+        if: always()
+        run: |
+          rm -rf _site && mkdir _site
+          cp -r app/. _site/
+          # si esta corrida falló, se vuelve a publicar lo anterior: nunca se pierde el historial
+          if [ -f _out/state.enc ]; then cp _out/state.enc _site/; elif [ -f state.enc ]; then cp state.enc _site/; fi
+          if [ -f _out/data.enc ]; then cp _out/data.enc _site/; elif [ -f prev_data.enc ]; then cp prev_data.enc _site/data.enc; fi
+          if [ -f _out/status.json ]; then cp _out/status.json _site/; fi
+          touch _site/.nojekyll
+          cd _site
+          git init -q -b site
+          git config user.name "nuri-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "NURI $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -fq "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" site
+
+      - name: Mantener activo el horario
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/nuri.yml/enable" >/dev/null 2>&1 || true
+
+      - name: Resultado
+        if: steps.run.outcome == 'failure'
+        run: |
+          cat _out/status.json 2>/dev/null || true
+          exit 1

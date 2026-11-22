@@ -543,7 +543,7 @@ class PickBook:
         picks = [p for p in every if (p["start_ts"] or now) >= now - 70 * 86400]
         wk = week_start(now)
         wk_ts = wk.timestamp()
-        current, settled = [], []
+        current, settled, history = [], [], []
         for p in picks:
             item = {k: p[k] for k in ("id", "tier", "league", "sport", "home", "away", "home_logo", "away_logo",
                                      "start_ts", "market_label", "selection_label", "odds", "min_odds", "p", "ev",
@@ -556,11 +556,15 @@ class PickBook:
                 item["live"] = {"status": e.get("status"), "score": e.get("score"), "clock": e.get("clock")}
             if p["result"] == "pending":
                 current.append(item)
-            elif (p["start_ts"] or 0) >= wk_ts:
-                settled.append(item)
+            else:
+                history.append(item)
+                if (p["start_ts"] or 0) >= wk_ts:
+                    settled.append(item)
         current.sort(key=lambda x: x["start_ts"] or 0)
         settled.sort(key=lambda x: x["start_ts"] or 0, reverse=True)
+        history.sort(key=lambda x: x["start_ts"] or 0, reverse=True)
         return {"week": {"label": week_label(wk), "start": wk_ts}, "active": current, "settled": settled,
+                "history": history,
                 "report": self.report(picks, now, every), "confirming": self.confirming,
                 "thresholds": self.thresholds(), "adjust_note": self.adj_note}
 

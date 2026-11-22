@@ -11,9 +11,10 @@ Una corrida completa de NURI en GitHub Actions (cada 15 min), sin depender de tu
   6. guarda estado y datos cifrados para la app
 
 Variables de entorno (secretos del repositorio):
-  NURI_CODE   código que cifra todo (es el mismo que pide la app del celular)
-  NTFY_TOPIC  tema de ntfy para los avisos
-  ODDSIO_KEY  (opcional) clave de odds-api.io para Caliente / Codere
+  NURI_CODE     código que cifra todo (es el mismo que pide la app del celular)
+  NTFY_TOPIC    tema de ntfy para los avisos
+  ODDSIO_KEY    (opcional) clave de odds-api.io para Caliente / Codere
+  NURI_APP_URL  (opcional) dirección de la app; al tocar un aviso se abre
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import json
 import os
 import sys
 import time
+import traceback
 import zipfile
 from pathlib import Path
 
@@ -32,7 +34,7 @@ WORK = Path(os.getenv("NURI_WORK") or ROOT / "_work")
 WORK.mkdir(parents=True, exist_ok=True)
 OUT.mkdir(parents=True, exist_ok=True)
 os.environ["NURI_DB"] = str(WORK / "nuri.sqlite3")
-os.environ.setdefault("NURI_CONFIRM_S", "600")  # dos corridas seguidas (cada ~15 min) para confirmar
+os.environ.setdefault("NURI_CONFIRM_S", "600")  # el pick debe sostenerse en dos corridas seguidas
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "cloud"))
 
@@ -41,23 +43,38 @@ import httpx  # noqa: E402
 from crypto import decrypt_bytes, encrypt_bytes, encrypt_json  # noqa: E402
 
 CODE = (os.getenv("NURI_CODE") or "").strip()
-if not CODE:
-    sys.exit("Falta el secreto NURI_CODE")
+TOPIC = (os.getenv("NTFY_TOPIC") or "").strip()
+STATUS: dict = {"ok": False, "started": time.time(), "steps": []}
+
+
+def _clean(text: str) -> str:
+    """Nada secreto llega al archivo público de estado."""
+    for s in (CODE, TOPIC, os.getenv("ODDSIO_KEY") or ""):
+        if s and len(s) >= 4:
+            text = text.replace(s, "***")
+    return text[:600]
+
+
+def step(msg: str) -> None:
+    print(msg, flush=True)
+    STATUS["steps"].append(_clean(msg))
 
 
 def load_state(path: Path) -> dict:
     """Descifra state.enc: la base SQLite de picks y el JSON con historial / avisos pendientes."""
     if not path.exists() or path.stat().st_size < 20:
-        print("[estado] primera corrida: sin estado previo")
+        step("[estado] primera corrida: sin estado previo")
         return {}
     try:
         raw = decrypt_bytes(json.loads(path.read_text()), CODE)
     except Exception as exc:
-        sys.exit(f"[estado] no se pudo descifrar ({type(exc).__name__}); ¿cambió NURI_CODE?")
+        raise SystemExit(f"[estado] no se pudo descifrar ({type(exc).__name__}): ¿cambió NURI_CODE?") from exc
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         if "nuri.sqlite3" in z.namelist():
             (WORK / "nuri.sqlite3").write_bytes(z.read("nuri.sqlite3"))
-        return json.loads(z.read("state.json")) if "state.json" in z.namelist() else {}
+        state = json.loads(z.read("state.json")) if "state.json" in z.namelist() else {}
+    step(f"[estado] abierto · última corrida hace {(time.time() - (state.get('last_run') or time.time())) / 60:.0f} min")
+    return state
 
 
 def save_state(path: Path, state: dict) -> None:
@@ -71,6 +88,8 @@ def save_state(path: Path, state: dict) -> None:
 
 async def main() -> None:
     t0 = time.time()
+    if not CODE:
+        raise SystemExit("Falta el secreto NURI_CODE (Settings → Secrets and variables → Actions)")
     state = load_state(Path(os.getenv("NURI_STATE_IN") or ROOT / "state.enc"))
 
     import database as db
@@ -81,12 +100,12 @@ async def main() -> None:
     from pickbook import PickBook
     from quant_engine import EngineConfig, NuriEngine
     from version import APP_VERSION
+    STATUS["version"] = APP_VERSION
 
     feed = EspnFeed()
-    if os.getenv("ODDSIO_KEY"):
-        print("[odds-api.io] clave presente (Caliente / Codere)")
     stats = await feed.run_once()
-    print(f"[ESPN] {stats}")
+    step(f"[ESPN] {stats['events']} partidos · {stats['summaries']} resúmenes · {stats['ok']} ok / {stats['err']} errores")
+    STATUS["espn"] = stats
 
     # Caliente / Codere (opcional): una pasada del cliente de odds-api.io
     if os.getenv("ODDSIO_KEY"):
@@ -95,41 +114,58 @@ async def main() -> None:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 for _ in range(2):
                     await src._cycle(client, feed)
+            step(f"[odds-api.io] {src.source_status().get('detail')}")
         except Exception as exc:
-            print(f"[odds-api.io] {exc!r}")
+            step(f"[odds-api.io] {type(exc).__name__}")
 
     now = time.time()
     events = feed.events()
     engine = NuriEngine(EngineConfig())
     result = engine.analyze(events, 1000.0, 1000.0, set(), now)
-    print(f"[motor] {len(events)} partidos · {len(result['rows_index'])} selecciones analizadas")
+    step(f"[motor] {len(events)} partidos · {len(result['rows_index'])} selecciones analizadas")
+    STATUS["analyzed"] = {"events": len(events), "selections": len(result["rows_index"])}
 
     pb = PickBook()
     pb.hist = record_history(state.get("hist") or {}, result["rows_index"], now)
     pb.seen = {k: float(v) for k, v in (state.get("seen") or {}).items()}
-    topic = (os.getenv("NTFY_TOPIC") or "").strip()
-    notifier = Notifier(topic) if topic else None
-    if notifier:
+    notifier = None
+    if TOPIC:
+        notifier = Notifier(TOPIC, os.getenv("NTFY_SERVER") or "https://ntfy.sh")
+        notifier.click = os.getenv("NURI_APP_URL") or None
         notifier.load(state.get("outbox") or [])
         pb.notifier = notifier
+    else:
+        step("[avisos] sin NTFY_TOPIC: no se mandan avisos al celular")
 
     pb.update(result, feed, now)
     settled = await pb.settle(feed, now)
     pb.weekly_check(now)
-    print(f"[picks] activos {len(db.pending_nuri_picks())} · calificados ahora {settled} · confirmando {pb.confirming}")
+    step(f"[picks] activos {len(db.pending_nuri_picks())} · calificados ahora {settled} · confirmando {pb.confirming}")
 
     if notifier:
         async with httpx.AsyncClient(timeout=12.0) as client:
             await notifier.flush(client)
-        print(f"[avisos] enviados {notifier.sent} · pendientes {len(notifier.dump())}")
+        step(f"[avisos] enviados {notifier.sent} · pendientes {len(notifier.dump())}")
 
     data = build_data(pb, result, feed, now, APP_VERSION, feed.sources(), next_minutes=15)
     (OUT / "data.enc").write_text(encrypt_json(data, CODE))
-    state = {"hist": pb.hist, "seen": pb.seen, "outbox": notifier.dump() if notifier else [],
-             "last_run": now, "version": APP_VERSION}
-    save_state(OUT / "state.enc", state)
-    print(f"[listo] {time.time() - t0:.1f} s · datos {len((OUT / 'data.enc').read_text()) // 1024} KB")
+    keep = {k: v for k, v in pb.seen.items() if now - v < 6 * 3600}
+    save_state(OUT / "state.enc", {"hist": pb.hist, "seen": keep, "outbox": notifier.dump() if notifier else [],
+                                   "last_run": now, "version": APP_VERSION})
+    STATUS["ok"] = True
+    step(f"[listo] {time.time() - t0:.1f} s · datos {len((OUT / 'data.enc').read_text()) // 1024} KB")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    code = 0
+    try:
+        asyncio.run(main())
+    except SystemExit as exc:
+        step(str(exc))
+        code = 1
+    except Exception:
+        step("[error] " + traceback.format_exc(limit=6))
+        code = 1
+    STATUS["finished"] = time.time()
+    (OUT / "status.json").write_text(json.dumps(STATUS, ensure_ascii=False, indent=1))
+    sys.exit(code)

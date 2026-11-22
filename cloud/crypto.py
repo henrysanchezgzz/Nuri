@@ -11,6 +11,7 @@ puede leer los picks y el historial.
 from __future__ import annotations
 
 import base64
+import gzip
 import json
 import os
 
@@ -39,5 +40,30 @@ def decrypt_bytes(blob: dict, code: str) -> bytes:
 
 
 def encrypt_json(obj, code: str) -> str:
-    raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
-    return json.dumps(encrypt_bytes(raw, code))
+    """JSON → gzip → AES-GCM (la app lo abre con WebCrypto y DecompressionStream)."""
+    raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=_plain).encode("utf-8")
+    blob = encrypt_bytes(gzip.compress(raw, 9), code)
+    blob["z"] = "gz"
+    return json.dumps(blob)
+
+
+def decrypt_json(text: str, code: str):
+    blob = json.loads(text)
+    raw = decrypt_bytes(blob, code)
+    return json.loads(gzip.decompress(raw) if blob.get("z") == "gz" else raw)
+
+
+def _plain(o):
+    try:
+        import numpy as np
+        if isinstance(o, np.bool_):
+            return bool(o)
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+    except ImportError:
+        pass
+    if isinstance(o, (set, tuple)):
+        return list(o)
+    return str(o)
