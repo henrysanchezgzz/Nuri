@@ -123,16 +123,24 @@ async def main() -> None:
     step(f"[props] {ps.status['detail']}")
     STATUS["props"] = {k: ps.status.get(k) for k in ("events", "props", "errors")}
 
-    # Caliente / Codere (opcional): una pasada del cliente de odds-api.io
+    # Caliente / Codere MX (opcional): odds-api.io con presupuesto (el plan gratis da 100 por hora y 500 al día),
+    # recordando entre corridas el catálogo, los momios y cuántas consultas lleva
+    oddsio_state = state.get("oddsio") or {}
     if os.getenv("ODDSIO_KEY"):
         src = feed.configure_oddsio(os.getenv("ODDSIO_KEY"))
+        src.load(oddsio_state)
+        src.max_age_pre = 2400      # un momio de hace menos de 40 min todavía sirve antes del partido
+        used = 0
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                for _ in range(2):
-                    await src._cycle(client, feed)
-            step(f"[odds-api.io] {src.source_status().get('detail')}")
-        except Exception as exc:
+                used = await src.run_budget(client, feed)
+        except Exception as exc:  # nunca se imprime el error completo: la URL lleva la clave
             step(f"[odds-api.io] {type(exc).__name__}")
+        oddsio_state = src.dump()
+        step(f"[odds-api.io] {src.source_status().get('detail')} · {used} consultas ahora · "
+             f"{len(src.calls)} en 24 h")
+        STATUS["oddsio"] = {"used": used, "day": len(src.calls), "books": src.books,
+                            "error": src.status.get("error")}
 
     now = time.time()
     events = feed.events()
@@ -179,7 +187,8 @@ async def main() -> None:
     (OUT / "data.enc").write_text(encrypt_json(data, CODE))
     keep = {k: v for k, v in pb.seen.items() if now - v < 6 * 3600}
     save_state(OUT / "state.enc", {"hist": pb.hist, "seen": keep, "outbox": notifier.dump() if notifier else [],
-                                   "props": ps.dump(), "last_run": now, "version": APP_VERSION})
+                                   "props": ps.dump(), "last_run": now, "version": APP_VERSION,
+                                   "oddsio": oddsio_state})
     STATUS["ok"] = True
     step(f"[listo] {time.time() - t0:.1f} s · datos {len((OUT / 'data.enc').read_text()) // 1024} KB")
 
