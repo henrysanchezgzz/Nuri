@@ -105,6 +105,21 @@ def build_data(pb, result: dict, feed, now: float, version: str, sources: dict |
     view = pb.view(feed, now)
     rows = result.get("rows_index") or {}
     ps = getattr(feed, "props_src", None)
+    # "en la mira": lo más cerca de ser pick con momio real (sirve para calibrar y para mostrar actividad)
+    watch = []
+    for r in rows.values():
+        if r.get("market_type") not in ("1x2", "ml", "dc", "spread", "ah", "total", "btts") or not r.get("quotes"):
+            continue
+        q = r["quotes"][0]
+        if q.get("ev") is None or q["ev"] < 0.0 or r.get("start_ts", 0) <= now + 20 * 60:
+            continue
+        ev = (getattr(feed, "raw", {}) or {}).get(r["event_id"]) or {}
+        watch.append({"league": r.get("league"), "home": (ev.get("home") or {}).get("name"),
+                      "away": (ev.get("away") or {}).get("name"), "start_ts": r.get("start_ts"),
+                      "market": r.get("market_label"), "sel": r.get("selection_label"), "book": book_name(q["book"]),
+                      "odds": q["odds"], "p": round(r["p"], 3), "ev": round(q["ev"], 4), "conf": r.get("confidence"),
+                      "line": r.get("line"), "type": r.get("market_type"), "ref": r.get("ref_odds")})
+    watch.sort(key=lambda w: -w["ev"])
     return {
         "v": 2,
         "meta": {
@@ -116,6 +131,7 @@ def build_data(pb, result: dict, feed, now: float, version: str, sources: dict |
             "sources": {k: {"ok": bool(v.get("ok")), "detail": v.get("detail")} for k, v in (sources or {}).items()},
         },
         "nuri": view,
+        "watch": watch[:25],
     }
 
 
