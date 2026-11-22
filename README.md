@@ -1,80 +1,43 @@
-# NURI · 누리 — Picks de valor  (v3)
+# NURI · 누리
 
-Una sola pantalla: **los mejores picks de la semana** y **la autoevaluación de esos mismos picks**.
-Si ningún partido tiene ventaja real, NURI no te da nada. Toda la matemática corre en tu laptop.
+Los mejores picks de valor para casas que operan en México, con autoevaluación semanal.
+Corre solo en la nube: no necesita ninguna computadora prendida.
 
-## Cómo elige un pick
+**App:** https://henrysanchezgzz.github.io/Nuri/ (se instala en el iPhone desde Safari → Compartir → *Agregar a inicio*).
 
-NURI revisa todos los partidos de las próximas 48 h (fútbol, NBA, NFL, NHL, MLB) cada 5 segundos y sólo
-deja pasar dos tipos de pick:
+## Cómo funciona
 
-- **Momio real con valor**: una casa que opera en México (Bet365 vía ESPN, gratis; Caliente / Codere si
-  conectas odds-api.io) paga más que la probabilidad real (línea de mercado sin margen, modelo de Shin, o
-  el modelo calibrado a ella). Ventaja mínima 5 % (7 % si la línea la calcula el modelo).
-- **Línea movida**: la línea de referencia se movió ≥ 4 puntos de probabilidad a favor desde que abrió y
-  las estadísticas reales lo respaldan. El pick dice el momio mínimo: si tu casa paga menos, no se toma.
+Cada 15 minutos GitHub Actions (`.github/workflows/nuri.yml`) corre `cloud/run.py`:
 
-Por dentro usa todo: forma de los últimos 5, diferencia de goles/puntos de la temporada, bajas de los
-líderes, predictor de ESPN, cara a cara y local/visita. El candidato debe sostenerse 3 minutos;
-máximo 5 por día y uno por partido.
+1. Baja de ESPN marcadores, líneas de referencia (DraftKings), estadísticas reales y momios reales de Bet365.
+2. Analiza todos los mercados: probabilidad justa de la línea sin comisión (Shin), simulación de 25 mil partidos por
+   deporte (Dixon-Coles / Poisson / normal), y la compara contra los momios reales.
+3. Sólo emite un pick si la ventaja se sostiene en dos revisiones seguidas y pasa todos los filtros:
+   - **Momio real:** la casa paga más de lo justo (5 % o más; más en empates, BTTS y momios altos). Totales y hándicaps
+     sólo cerca de una línea con precio de referencia. Se descarta si la casa alargó el momio sin que el mercado se moviera.
+   - **Línea moviéndose:** el mercado se movió 4–12 puntos en las últimas horas (medido por NURI) y las estadísticas
+     coinciden; el pick dice desde qué momio conviene.
+   - Máximo 5 al día, 2 por liga, 1 por partido y 10 % del banco por día (¼ de Kelly, tope 3 % por pick).
+4. Califica los picks terminados, mide si le ganó a la línea de cierre (CLV) y se vuelve más exigente si no.
+5. Manda cada pick, su resultado y el resumen de los lunes al celular con [ntfy](https://ntfy.sh).
+6. Publica la app y los datos **cifrados** (PBKDF2-SHA256 200 mil vueltas + AES-256-GCM) en la rama `site`
+   (GitHub Pages). El repositorio es público; los picks sólo se abren con el código.
 
-## Autoevaluación (por semana, lunes a domingo)
+## Secretos del repositorio
 
-Cada pick queda guardado con su momio y su probabilidad. Al terminar el partido NURI lo califica solo con
-el marcador oficial de ESPN (aunque la app haya estado cerrada) y muestra: récord, unidades (1 u por pick),
-ROI, aciertos esperados contra aciertos reales y **CLV** (si la línea se movió a favor después del pick,
-la mejor señal de que la ventaja es real). Si los picks dejan de ganarle al cierre, NURI sube su exigencia solo.
+| Nombre | Para qué |
+| --- | --- |
+| `NURI_CODE` | Código que cifra los datos; la app lo pide una vez en cada celular |
+| `NTFY_TOPIC` | Tema de ntfy donde llegan los avisos |
+| `ODDSIO_KEY` | (opcional) clave de odds-api.io para sumar momios de Caliente y Codere |
 
-## Cómo se abre
+## Carpetas
 
-Doble clic en el ícono **NURI** del escritorio (o búscalo en el menú Inicio).
-Se abre como ventana de app (Brave, sin barra de direcciones ni Terminal).
-Para apagarlo: botón **Apagar NURI** abajo a la derecha, o simplemente cierra la ventana:
-el servidor se apaga solo a los 20 minutos sin uso.
+- `backend/` motor (feeds, modelo, registro de picks). `main.py` es el modo de escritorio viejo.
+- `cloud/` la corrida en la nube y el cifrado.
+- `app/` la app (una sola página, estilo Namufin: Aero, Oscuro y Claro).
+- `frontend/` la interfaz de escritorio anterior.
 
-## De dónde salen los datos
+En la laptop, el ícono de NURI ya sólo abre la app de la nube (con `NURI_LOCAL=1` en `.env` vuelve el modo local).
 
-| Qué | Fuente | Costo |
-|---|---|---|
-| Partidos, marcador en vivo, minuto, logos oficiales | ESPN (API pública) | gratis |
-| **Estadísticas reales**: récord, tabla, últimos 5, promedios de temporada, bajas, líderes, predictor ESPN, cara a cara, alineaciones | Resumen de cada partido en ESPN | gratis |
-| **Momios reales de Bet365** (fútbol: 1X2, total de goles, goleador) en Premier, Serie A, Bundesliga, Ligue 1, MLS, Champions, Europa League, Eredivisie, Portugal… | Los que ESPN publica de Bet365 | gratis |
-| Línea de mercado y su movimiento (apertura → actual) | DraftKings vía ESPN, **sólo como referencia** de probabilidad real (Shin le quita el margen) | gratis |
-| **Momios reales de Caliente y Codere MX** (pre-partido y en vivo) | odds-api.io con tu clave (plan Solo ≈ US$65/mes, 2 casas) | de pago |
-| Probabilidades | Motor NURI: Dixon-Coles / Poisson / Gaussiano + Monte Carlo 25,000 + Bayes con marcador, reloj y tarjetas | — |
-
-Ligas: Liga MX, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1, Champions League, MLS, NBA, NFL, NHL y MLB.
-
-### Caliente y Codere
-
-No tienen API pública y NURI no se mete a sus sistemas. El único servicio autorizado que hoy los publica
-es **odds-api.io** (Caliente y Codere MX aparecen activos en su catálogo). Para conectarlos:
-
-1. Compra el plan **Solo** en https://odds-api.io/pricing (tú pagas; NURI nunca toca tu tarjeta).
-2. Copia la clave que te llega por correo.
-3. En NURI → Radar → **Conectar Caliente y Codere** → pega la clave → Guardar → elige Caliente + Codere MX.
-
-La clave se guarda sólo en tu laptop (SQLite en `%LOCALAPPDATA%\NURI`). También puedes ponerla en `.env`
-como `ODDSIO_KEY=...`. Sin clave, NURI sigue funcionando con Bet365 + líneas públicas + estadísticas ESPN.
-
-## Honestidad del modelo
-
-Una ventaja real en apuestas es de 2–8 %. Nadie tiene ventajas de 50–90 %: si una app te las muestra,
-está mal calculada o te miente. Si NURI te marca una ventaja enorme al escribir un momio, casi siempre es
-un error de captura o una línea distinta (otro hándicap/total).
-
-## Archivos
-
-```
-backend/nuri_app.py     lanzador de escritorio (pythonw, sin consola)
-backend/main.py         FastAPI + WebSocket /ws/live (cada 5 s)
-backend/quant_engine.py las 7 capas matemáticas + tablero de probabilidades
-backend/pickbook.py     elige los picks, los califica y arma la autoevaluación semanal
-backend/mx_feeds.py     ESPN (real), simulador demo, The Odds API opcional
-backend/espn_facts.py   estadísticas reales + momios Bet365 del resumen de ESPN
-backend/oddsio.py       Caliente / Codere MX vía odds-api.io (con tu clave)
-backend/database.py     SQLite local (nuri.sqlite3)
-backend/nuri.log        registro (si algo falla, aquí está el motivo)
-backend/estado.json     resumen del estado de las fuentes
-frontend/               React + Vite + Tailwind (dist/ ya compilado)
-```
+Apostar implica riesgo. NURI busca ventaja matemática, no garantiza resultados.
