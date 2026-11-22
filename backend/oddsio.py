@@ -400,7 +400,8 @@ class OddsIoSource:
                 "last_odds": {k: v for k, v in self.last_odds.items() if now - v < 86400},
                 "quotes": {k: v for k, v in self.quotes.items() if now - v.get("ts", 0) < 3 * 3600},
                 "calls": [t for t in self.calls if now - t < 86400], "no_multi": self.no_multi,
-                "backoff_until": self.backoff_until, "auto_selected": self.auto_selected}
+                "backoff_until": self.backoff_until, "auto_selected": self.auto_selected,
+                "error": self.status.get("error"), "detail": self.status.get("detail")}
 
     def load(self, st: dict) -> None:
         st = st or {}
@@ -417,6 +418,8 @@ class OddsIoSource:
         self.no_multi = bool(st.get("no_multi"))
         self.backoff_until = float(st.get("backoff_until") or 0)
         self.auto_selected = float(st.get("auto_selected") or 0)
+        if st.get("error"):
+            self.status.update(ok=False, error=st.get("error"), detail=st.get("detail") or self.status["detail"])
 
     def allowance(self, now: float, per_run: int = 3) -> int:
         """Cuántas consultas puede hacer esta corrida sin pasarse de 100 por hora ni de 500 al día."""
@@ -429,8 +432,10 @@ class OddsIoSource:
         antes, rotando para que todos se actualicen. Devuelve cuántas consultas hizo."""
         now = time.time()
         if now < self.backoff_until:
-            self.status.update(detail="esperando: se llegó al límite de consultas del plan")
+            if self.status.get("error") not in ("clave", "plan"):
+                self.status.update(detail="esperando: se llegó al límite de consultas del plan")
             return 0
+        self.status.update(error=None)   # se vuelve a intentar
         left = self.allowance(now, per_run)
         used = 0
         try:
