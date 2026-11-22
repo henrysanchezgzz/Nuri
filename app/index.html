@@ -941,7 +941,7 @@ function vRes(){const W=weeks(),w=W[0],all=D.nuri.report.all_time||{};
   const L=D.nuri.report.levels||{},lv=['lock','alta','media','baja'].filter(k=>L[k]&&L[k].settled);
   if(lv.length)h+=`<div class="lvrow anim">${lv.map(k=>`<div class="lvc"><span class="bdg ${LV[k][1]}">${k==='lock'?ic('lock'):''}${LV[k][0]}</span><b>${nn(L[k].won)} – ${nn(L[k].lost)}</b></div>`).join('')}</div>`;
   if(ps.length)h+=`<div class="card anim">${ps.map(row).join('')}</div>`;
-  const old=W.slice(1).filter(x=>x.picks);
+  const cw=(W.find(x=>x.current)||{start:Infinity}).start,old=W.filter(x=>!x.current&&x.start<cw&&x.picks);   // sólo semanas ya pasadas
   if(old.length){h+=`<div class="sec">Semanas anteriores</div><div class="card anim">`;
     for(const x of old){const on=openWeek===x.start,wp=allPicks().filter(p=>Math.abs(weekStart(p.start_ts)-x.start)<120),u=x.units||0;
       h+=`<div class="row" data-wk="${x.start}"><div class="ico" style="--c:${u>0?'var(--accent)':u<0?'var(--red)':'var(--muted)'}">${ic(u>0?'check':u<0?'x':'minus')}</div>
@@ -969,8 +969,8 @@ function setSheet(){const src=D?Object.entries(D.meta.sources||{}):[];
   <p class="note">Con tu banco, cada pick te dice cuánto apostar y los resultados salen en pesos.</p>
   <div class="ghead">Cómo elige NURI</div><div class="grp howto">
    <p><b>LOCK</b>: todas las señales coinciden: precio con ventaja, el mercado moviéndose a su favor y las estadísticas (o el historial del jugador) respaldándolo. <b>Alta, Media, Baja</b>: menos señales a favor; la apuesta sugerida baja con el nivel.</p>
-   <p><b>En Bet365 a…</b>: la casa paga más de lo que vale, comparado contra el mercado sin comisión.</p>
-   <p><b>Búscala</b>: el mercado (o la línea de un jugador) se acaba de mover y las casas mexicanas tardan en copiarlo. Sólo conviene si tu casa todavía tiene esa línea y ese momio.</p>
+   <p><b>En Bet365, Caliente o Codere a…</b>: la casa paga ahorita más de lo que vale, comparado contra el mercado sin comisión y, en jugadores, contra su historial real. Sólo salen picks que puedes tomar en ese momento.</p>
+   <p><b>Precio justo</b>: el momio mínimo que conviene de cada partido y jugador, para revisar cualquier casa.</p>
    <p>Se califica sola cada semana y por nivel: si un nivel no cumple, NURI lo vuelve más difícil de alcanzar.</p></div>
   ${src.length?`<div class="ghead">Fuentes · revisado ${D?esc(ago(D.meta.generated)):''}</div><div class="grp">${src.map(([k,v])=>`<div class="kv"><span><i class="dot${v.ok?'':' off'}"></i>${esc(k)}</span></div>`).join('')}</div>`:''}
   <button class="btn sec" id="rfNow">${ic('refresh')} Actualizar ahora</button>

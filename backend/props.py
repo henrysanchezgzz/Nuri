@@ -409,7 +409,7 @@ class PropsSource:
                     self.names[str(a["id"])] = [a.get("displayName") or a.get("fullName") or "", team_id, now,
                                                 (pos.get("abbreviation") if isinstance(pos, dict) else "") or "",
                                                 str(a.get("jersey") or "")]
-        self.rost_ts[f"{lg}:{team_id}"] = now
+        self.rost_ts[f"r2:{lg}:{team_id}"] = now   # r2: ya guarda número y posición
 
     async def refresh(self, feed, now: float | None = None, concurrency: int = 8) -> None:
         """Una pasada: props de los partidos de NBA, NFL y NHL (y goleadores de fútbol) de las próximas 30 h."""
@@ -446,7 +446,7 @@ class PropsSource:
                     else:
                         self.props[e["id"]] = parse_props(items, e["_league"])
                     for tid in (e.get("_home_id"), e.get("_away_id")):   # el id de equipo se repite entre deportes
-                        if tid and now - self.rost_ts.get(f"{lg}:{tid}", 0) > 20 * 3600:
+                        if tid and now - self.rost_ts.get(f"r2:{lg}:{tid}", 0) > 20 * 3600:
                             await self._roster(client, sport, lg, str(tid))
                 except Exception as exc:  # una liga sin props no tumba la corrida
                     errs += 1
