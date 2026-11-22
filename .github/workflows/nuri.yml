@@ -22,7 +22,7 @@ concurrency:
 jobs:
   nuri:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +77,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/nuri.yml/enable" >/dev/null 2>&1 || true
+
+      # GitHub no garantiza el horario (en repos nuevos a veces tarda horas en arrancar). Si no ha
+      # habido una corrida programada en 45 min, esta corrida espera 10 min y lanza la siguiente.
+      # En cuanto el horario de GitHub funciona, esto deja de hacer nada.
+      - name: Siguiente revisión si el horario de GitHub se atrasa
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R="${{ github.repository }}"
+          last=$(gh run list -R "$R" -w nuri.yml -e schedule -L 1 --json createdAt -q '.[0].createdAt' 2>/dev/null || true)
+          now=$(date -u +%s)
+          if [ -n "$last" ]; then age=$(( now - $(date -u -d "$last" +%s) )); else age=999999; fi
+          echo "última corrida programada hace ${age} s"
+          if [ "$age" -le 2700 ]; then exit 0; fi
+          waiting=$(gh run list -R "$R" -w nuri.yml -L 10 --json status -q '[.[] | select(.status=="queued" or .status=="pending" or .status=="waiting" or .status=="requested")] | length' 2>/dev/null || echo 0)
+          if [ "${waiting:-0}" != "0" ]; then echo "ya hay otra corrida en cola"; exit 0; fi
+          sleep 600
+          gh workflow run nuri.yml -R "$R" --ref main || true
 
       - name: Resultado
         if: steps.run.outcome == 'failure'
