@@ -2024,7 +2024,9 @@ class EspnFeed:
 
         async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": USER_AGENTS[0]},
                                      follow_redirects=True) as client:
-            await asyncio.gather(*(guarded(self._fetch(client, lg, d)) for lg in self.leagues for d in range(days)))
+            # el "hoy" de ESPN cambia de día más tarde que México: pedimos también las fechas exactas
+            offsets = [None] + list(range(days))
+            await asyncio.gather(*(guarded(self._fetch(client, lg, d)) for lg in self.leagues for d in offsets))
             now = time.time()
             evs = [e for e in self.raw.values()
                    if e["status"] == "live" or (e["status"] == "pre" and -600 < e["start_ts"] - now < summary_hours * 3600)]
@@ -2049,7 +2051,7 @@ class EspnFeed:
                     hot = any(e["status"] == "live" or (e["status"] == "pre" and e["start_ts"] - now < 1800) for e in evs)
                     if now - self.last_today.get(lg, 0) >= (15 if hot else 180):
                         self.last_today[lg] = now
-                        jobs.append(self._fetch(client, lg, 0))
+                        jobs.append(self._fetch(client, lg, None))
                     # ESPN no acepta rangos de fechas: pedimos día por día la próxima semana
                     for d in range(1, 7):
                         if now - self.last_week.get((lg, d), 0) >= 1800 + d * 60:
@@ -2093,10 +2095,11 @@ class EspnFeed:
                     self.b365.pop(eid, None)
                 await asyncio.sleep(5)
 
-    async def _fetch(self, client: httpx.AsyncClient, lg: str, day_offset: int) -> None:
+    async def _fetch(self, client: httpx.AsyncClient, lg: str, day_offset: int | None) -> None:
+        """day_offset None = el marcador "de hoy" de ESPN; un número = esa fecha de México (0 = hoy)."""
         fam, path, title = ESPN_LEAGUES[lg]
         params: dict = {"limit": 300}
-        if day_offset:
+        if day_offset is not None:
             d = datetime.now(timezone(timedelta(hours=-6))) + timedelta(days=day_offset)
             params["dates"] = f"{d:%Y%m%d}"
         r = await client.get(f"{ESPN_BASE}/{path}/{lg}/scoreboard", params=params)
