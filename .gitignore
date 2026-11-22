@@ -1,0 +1,12 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+backend/nuri.sqlite3*
+frontend/node_modules/
+backend/estado.json
+_out/
+_work/
+state.enc
+data.enc
+*.sqlite3

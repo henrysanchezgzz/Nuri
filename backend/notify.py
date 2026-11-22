@@ -1,0 +1,136 @@
+"""
+NURI · 누리 — notify.py
+=======================
+Manda los picks a tu celular con ntfy (https://ntfy.sh): app gratis para iPhone y Android, sin cuenta.
+En el cel te suscribes a tu "tema" (una clave larga que sólo tú conoces) y NURI publica ahí:
+
+    · cada pick nuevo, en cuanto se confirma
+    · el resultado de cada pick cuando termina el partido
+    · el resumen de la semana (lunes en la mañana)
+
+Si no hay internet, los mensajes esperan en una cola y se reintentan.
+"""
+from __future__ import annotations
+
+import asyncio
+import threading
+import time
+from datetime import datetime
+
+import httpx
+
+SERVER = "https://ntfy.sh"
+DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+RES_TXT = {"won": "Ganó", "half_won": "Medio ganado", "lost": "Perdió", "half_lost": "Medio perdido",
+           "push": "Devuelta", "void": "Anulada"}
+
+
+def _when(ts: float, tz) -> str:
+    d = datetime.fromtimestamp(ts, tz)
+    return f"{DIAS[d.weekday()]} {d.day} · {d:%H:%M}"
+
+
+class Notifier:
+    def __init__(self, topic: str, server: str = SERVER):
+        self.topic = topic.strip()
+        self.server = server.rstrip("/")
+        self._q: list[dict] = []
+        self._lock = threading.Lock()
+        self.sent = 0
+        self.last_error: str | None = None
+        self.last_ok: float | None = None
+
+    # ------------------------------------------------------------------ cola (se puede llamar desde hilos)
+    def queue(self, title: str, message: str, tags: list[str] | None = None, priority: int = 3,
+              click: str | None = None) -> None:
+        msg = {"topic": self.topic, "title": title, "message": message, "priority": priority}
+        if tags:
+            msg["tags"] = tags
+        if click:
+            msg["click"] = click
+        with self._lock:
+            self._q.append({"msg": msg, "tries": 0, "next": 0.0})
+
+    async def run(self) -> None:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            while True:
+                await self.flush(client)
+                await asyncio.sleep(2.0)
+
+    async def flush(self, client: httpx.AsyncClient) -> None:
+        now = time.time()
+        with self._lock:
+            due = [x for x in self._q if x["next"] <= now]
+        for item in due:
+            try:
+                r = await client.post(self.server, json=item["msg"])
+                r.raise_for_status()
+                with self._lock:
+                    if item in self._q:
+                        self._q.remove(item)
+                self.sent += 1
+                self.last_ok = time.time()
+                self.last_error = None
+            except Exception as exc:  # sin internet / ntfy caído: reintenta con espera creciente
+                item["tries"] += 1
+                item["next"] = time.time() + min(30 * 2 ** item["tries"], 1800)
+                self.last_error = type(exc).__name__
+                if item["tries"] > 12:
+                    with self._lock:
+                        if item in self._q:
+                            self._q.remove(item)
+
+    # ------------------------------------------------------------------ persistencia (versión en la nube)
+    def dump(self) -> list[dict]:
+        with self._lock:
+            return [dict(x["msg"]) for x in self._q]
+
+    def load(self, msgs: list[dict]) -> None:
+        for m in msgs or []:
+            m = dict(m)
+            m["topic"] = self.topic
+            with self._lock:
+                self._q.append({"msg": m, "tries": 0, "next": 0.0})
+
+    def status(self) -> dict:
+        return {"enabled": True, "topic": self.topic, "sent": self.sent, "pending": len(self._q),
+                "error": self.last_error, "last_ok": self.last_ok}
+
+    # ------------------------------------------------------------------ mensajes
+    def pick(self, p: dict, tz) -> None:
+        book = {"Caliente.mx": "Caliente"}.get(p.get("book") or "", p.get("book"))
+        if p["tier"] == "A":
+            price = (f"{book} paga {p['odds']:.2f} · ventaja {p['ev'] * 100:+.1f} %\n"
+                     f"Si ya bajó de {p['min_odds']:.2f}, no la tomes")
+        else:
+            price = f"Tómala sólo si tu casa paga {p['odds']:.2f} o más (ventaja {p['ev'] * 100:+.1f} %)"
+        msg = (f"{p['selection_label']} · {p['market_label']}\n"
+               f"{p['home']} vs {p['away']} · {_when(p['start_ts'], tz)}\n"
+               f"{price}\n"
+               f"Probabilidad {p['p'] * 100:.0f} % · apuesta {max(p.get('stake_pct') or 0.01, 0.005) * 100:.1f} % de tu banco")
+        title = f"Pick NURI · {p['league']}" + (" · momio real" if p["tier"] == "A" else "")
+        self.queue(title, msg, priority=4 if p["tier"] == "A" else 3)
+
+    def result(self, p: dict, result: str, units: float, h: int, a: int, week_line: str) -> None:
+        txt = RES_TXT.get(result, result)
+        msg = (f"{p['home']} {h}–{a} {p['away']}\n"
+               f"{txt}: {units:+.2f} u\n{week_line}")
+        self.queue(f"{txt} · {p['selection_label']}", msg, priority=2)
+
+    def weekly(self, label: str, s: dict, verdict: str) -> None:
+        if not s.get("picks"):
+            msg = f"Semana del {label}: ningún pick pasó el filtro. Mejor nada que apostar sin ventaja."
+        else:
+            msg = verdict
+        self.queue(f"Resumen NURI · semana del {label}", msg, priority=3)
+
+    def test(self, active: list[dict], tz) -> None:
+        if active:
+            lines = []
+            for p in active[:6]:
+                price = (f"{p.get('book')} {p['odds']:.2f}" if p["tier"] == "A" else f"desde {p['odds']:.2f}")
+                lines.append(f"• {p['selection_label']} ({p['home']} vs {p['away']}, {_when(p['start_ts'], tz)}) · {price}")
+            body = "Ya quedó. Picks activos ahora:\n" + "\n".join(lines)
+        else:
+            body = "Ya quedó. Aquí te van a llegar los picks en cuanto aparezcan."
+        self.queue("NURI conectado a tu cel", body, priority=3)

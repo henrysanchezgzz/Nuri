@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { min-height: 100%; }
+  body { font-feature-settings: 'cv11', 'ss01'; background: #090B10; }
+  ::selection { background: rgba(16, 185, 129, 0.25); }
+  * { scrollbar-width: thin; scrollbar-color: #2A3142 transparent; }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  .card { @apply bg-ink-card border border-ink-line rounded-2xl shadow-card; }
+  .num { @apply font-mono tabular-nums; }
+  .label { @apply text-[11px] uppercase tracking-[0.08em] text-fg-mute; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 h-10 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-fg text-ink hover:bg-white; }
+  .btn-ghost { @apply btn border border-ink-line text-fg-dim hover:text-fg hover:border-ink-soft; }
+  .pill { @apply h-8 px-3.5 rounded-full text-[13px] font-medium border transition-colors duration-150 inline-flex items-center gap-2 whitespace-nowrap; }
+  .field { @apply h-10 rounded-xl bg-ink border border-ink-line px-3 text-sm text-fg outline-none focus:border-ink-soft placeholder:text-fg-mute; }
+}
+
+/* Destello sutil cuando cambia una cuota o un marcador */
+@keyframes flashUp { 0% { background: rgba(16,185,129,0.28); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(239,68,68,0.22); } 100% { background: transparent; } }
+@keyframes flashNeutral { 0% { background: rgba(231,234,241,0.12); } 100% { background: transparent; } }
+.flash-up { animation: flashUp 1.2s ease-out; border-radius: 6px; }
+.flash-down { animation: flashDown 1.2s ease-out; border-radius: 6px; }
+.flash { animation: flashNeutral 1.2s ease-out; border-radius: 6px; }
+
+@keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+.live-dot { animation: livePulse 1.6s ease-in-out infinite; }
+
+@keyframes tickBar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.tick-bar { transform-origin: left; animation: tickBar linear forwards; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fadeUp .35s ease-out both; }
+
+@keyframes slideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.slide-in { animation: slideIn .25s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-up, .flash-down, .flash, .live-dot, .fade-up, .slide-in, .tick-bar { animation: none !important; }
+}
