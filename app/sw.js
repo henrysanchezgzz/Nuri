@@ -1,10 +1,11 @@
 // NURI: permite abrir la app sin internet (con los últimos datos). Cambia VERSION al actualizar la app.
-const VERSION = 'nuri-v1';
+const VERSION = 'nuri-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './logo-aero.png', './logo-dark.png', './logo-light.png', './favicon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))));
+  // sólo borra cachés viejos de NURI: Namufin vive en el mismo dominio y tiene los suyos
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('nuri-') && k !== VERSION).map(k => caches.delete(k)))));
   self.clients.claim();
 });
 self.addEventListener('fetch', e => {
