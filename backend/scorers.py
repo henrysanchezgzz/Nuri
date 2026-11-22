@@ -195,6 +195,8 @@ def candidates(feed, now: float) -> list[dict]:
             conf = (50 + min(15.0, (ev_ - MIN_EV) * 150) + (min(10.0, (rel - MIN_REL) * 60) if rel and rel >= MIN_REL else 0)
                     + (min(10.0, (cross - CROSS_MIN) * 60) if cross and cross >= CROSS_MIN else 0)
                     + (4 if p >= 0.3 else 0) + (5 if pf is not None and pd is not None and abs(pf - pd) <= 0.04 else 0))
+            if not (rel is not None and rel >= MIN_REL):
+                conf = min(conf, 64.0)   # sólo la comparación con DraftKings (sin confirmar con el primer goleador): media
             out.append({"event_id": eid, "player": a["name"], "key": k, "odds": o, "p": round(p, 4), "ev": round(ev_, 4),
                         "rel": round(rel, 3) if rel else None, "cross": round(cross, 3) if cross else None,
                         "dk_odds": od, "lam": round(lam, 2) if lam else None, "conf_score": round(min(conf, 79.0), 1),
