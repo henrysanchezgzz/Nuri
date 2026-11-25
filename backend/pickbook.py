@@ -595,8 +595,26 @@ class PickBook:
     MAX_SURE_LEAGUE_DAY = 3
     SURE_STAKE = {"lock": 0.02, "alta": 0.015, "media": 0.01, "baja": 0.005}
 
+    def sure_calibration(self, now: float) -> dict:
+        """Se califica a sí mismo: compara lo que NURI esperaba acertar con lo que de verdad acertó (últimos 60
+        picks de análisis). Si acierta menos de lo que dice, su análisis pesa menos y exige más ventaja."""
+        done = [p for p in db.list_nuri_picks(since_ts=now - 45 * 86400)
+                if p.get("tier") == "S" and p.get("result") in ("won", "lost", "half_won", "half_lost")][:60]
+        n = len(done)
+        if n < 12:
+            return {"n": n, "w_model": 0.65, "edge": 0.05}
+        hit = sum(1.0 if p["result"] == "won" else 0.5 if p["result"].startswith("half") else 0.0 for p in done) / n
+        exp = sum(p.get("p") or 0.6 for p in done) / n
+        gap = exp - hit                                   # > 0: NURI se está creyendo de más
+        w = max(0.35, min(0.70, 0.65 - 1.5 * max(0.0, gap - 0.03)))
+        edge = 0.05 + max(0.0, gap - 0.03) * 0.6
+        return {"n": n, "hit": round(hit, 3), "expected": round(exp, 3), "w_model": round(w, 3), "edge": round(edge, 3)}
+
     def _update_sure(self, result: dict, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
         import sure_picks as SP
+        cal = self.sure_calibration(now)
+        SP.W_MODEL, SP.MIN_EDGE = cal["w_model"], cal["edge"]
+        self.cal = cal
         try:
             team = SP.team_candidates(result, feed, now, stats_agreement, self.MIN_LEAD_S, self.HORIZON_S, _for_against)
             pl = SP.prop_candidates(feed, now, self.MIN_LEAD_S, self.HORIZON_S)
@@ -1055,7 +1073,8 @@ class PickBook:
         current.sort(key=lambda x: x["start_ts"] or 0)
         settled.sort(key=lambda x: x["start_ts"] or 0, reverse=True)
         history.sort(key=lambda x: x["start_ts"] or 0, reverse=True)
-        return {"week": {"label": week_label(wk), "start": wk_ts}, "active": current, "settled": settled,
+        cal = self.sure_calibration(now)
+        return {"cal": cal, "week": {"label": week_label(wk), "start": wk_ts}, "active": current, "settled": settled,
                 "history": history,
                 "report": self.report(picks, now, every), "confirming": self.confirming,
                 "thresholds": self.thresholds(), "adjust_note": self.adj_note}
