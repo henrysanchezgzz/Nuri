@@ -1061,6 +1061,9 @@ class PickBook:
                                      "created_at", "close_p", "close_odds", "line", "market_type", "conf",
                                      "conf_score")}
             item["book"] = book_name(p["book"]) if p["book"] else None
+            if p.get("tier") == "S" and p.get("p"):          # el nivel es la probabilidad (LOCK 80 %+)
+                import sure_picks as SP
+                item["conf"], item["conf_score"] = SP.level(p["p"]), round(p["p"] * 100, 1)
             item["clv"] = round(p["close_p"] - p["p"], 4) if p.get("close_p") is not None else None
             e = feed.raw.get(p["event_id"]) if hasattr(feed, "raw") else None
             if e:
