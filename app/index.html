@@ -733,6 +733,9 @@ body.ios .betbox .btn:not(.lnk){background:#fff;color:#000;border:0;box-shadow:n
 .bk-g b{display:block;font-size:17px;font-weight:800;margin-top:2px}
 .bk-g b.up{color:#30d158}.bk-g b.dn{color:#ff453a}
 .bk-s,.bk-e{font-size:12.5px;color:var(--ink-2);margin:10px 0 0;line-height:1.4}
+.filt{display:flex;justify-content:center;gap:22px;margin:-4px 0 14px}
+.filt button{border:0;background:none;padding:4px 0;font:inherit;font-size:14px;font-weight:600;color:rgba(235,235,245,.45)}
+.filt button.sel{color:#fff;box-shadow:inset 0 -2px 0 #fff}
 
 </style>
 </head>
@@ -740,7 +743,7 @@ body.ios .betbox .btn:not(.lnk){background:#fff;color:#000;border:0;box-shadow:n
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="jgl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".45" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient></defs></svg>
 <div class="app">
   <header class="hd">
-    <span></span><div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M19 9h26v15a13 13 0 0 1-26 0z" fill="currentColor"/><path d="M19 14h-6a7 7 0 0 0 7.5 11M45 14h6a7 7 0 0 1-7.5 11" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M32 13.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#000"/><path d="M29 36h6v8h-6z" fill="currentColor"/><rect x="21" y="44" width="22" height="5.5" rx="2.2" fill="currentColor"/><rect x="17" y="51.5" width="30" height="4.5" rx="2.2" fill="currentColor"/></svg><b>NURI</b></div>
+    <span></span><div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M13 53V15L45 49V15" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="51" cy="13" r="7" fill="#30d158"/><path d="M45.5 10.5c3 1.2 3 4.2 0 5.6M56.5 10.5c-3 1.2-3 4.2 0 5.6" fill="none" stroke="#000" stroke-width="1.8"/></svg><b>NURI</b></div>
     <button class="rbtn" id="btnSet" aria-label="Ajustes"></button>
   </header>
   <div class="seg seg-main" id="seg"><button data-v="picks" class="on">Picks</button><button data-v="res">Resultados</button></div>
@@ -823,7 +826,7 @@ async function load(manual){
   }finally{busy=false}}
 
 /* ================= código ================= */
-const LOGO='<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M19 9h26v15a13 13 0 0 1-26 0z" fill="currentColor"/><path d="M19 14h-6a7 7 0 0 0 7.5 11M45 14h6a7 7 0 0 1-7.5 11" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M32 13.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#000"/><path d="M29 36h6v8h-6z" fill="currentColor"/><rect x="21" y="44" width="22" height="5.5" rx="2.2" fill="currentColor"/><rect x="17" y="51.5" width="30" height="4.5" rx="2.2" fill="currentColor"/></svg>';
+const LOGO='<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M13 53V15L45 49V15" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="51" cy="13" r="7" fill="#30d158"/><path d="M45.5 10.5c3 1.2 3 4.2 0 5.6M56.5 10.5c-3 1.2-3 4.2 0 5.6" fill="none" stroke="#000" stroke-width="1.8"/></svg>';
 function showLock(err){const l=$('#lock');l.classList.remove('hidden');
   l.innerHTML=`<div class="lk-logo">${LOGO}</div><p class="lk-t">NURI</p><p class="lk-s">${err?'Ese código no abre tus picks. Revísalo.':'Escribe tu código'}</p>
   <input id="codeIn" class="code-in" maxlength="14" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
@@ -968,15 +971,15 @@ function myStats(){const ps=allPicks(),byId=Object.fromEntries(ps.map(p=>[p.id,p
   for(const [id,b] of Object.entries(bets)){const o=betOutcome(b,byId[id]);st.n++;
     if(o===null){st.pend++;st.pendAmt+=b.amt;continue}st.staked+=b.amt;st.profit+=o;if(o>0)st.won++;else if(o<0)st.lost++}
   return st}
-const FILT=[['all','Todos'],['alta','Alta y Lock'],['lock','Solo Lock']];
+const FILT=[['all','Todos'],['alta','Alta+'],['lock','Lock']];
 function passFilt(p){const f=prefs.filt||'all',l=lvl(p);return f==='all'||(f==='lock'?l==='lock':(l==='lock'||l==='alta'))}
 function vPicks(){const n=D.nuri,t=now();
   const all=[...(n.active||[])].filter(passFilt).sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
   // los de "búscala" valen mientras tu casa no copie la línea: después de 3 h probablemente ya cambió
   const old=all.filter(p=>cond(p)&&p.created_at&&t-p.created_at>3*3600),act=all.filter(p=>!old.includes(p));
-  let h=`<div class="chips2">${FILT.map(([k,t])=>`<button data-f="${k}" class="${(prefs.filt||'all')===k?'sel':''}">${t}</button>`).join('')}</div>`;
+  let h=`<div class="filt">${FILT.map(([k,t])=>`<button data-f="${k}" class="${(prefs.filt||'all')===k?'sel':''}">${t}</button>`).join('')}</div>`;
   h+=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
-   <b>${(prefs.filt||'all')==='all'?'Ahorita no hay picks':'No hay picks con ese filtro'}</b><p>NURI analiza todos los partidos cada pocos minutos. En cuanto encuentre uno bueno, te llega el aviso al cel.</p></div>`;
+   <b>${(prefs.filt||'all')==='all'?'Ahorita no hay picks':'No hay picks con ese filtro'}</b><p>NURI analiza todos los partidos cada pocos minutos.</p></div>`;
   if(old.length)h+=`<div class="sec">Pueden haber cambiado</div><div class="card anim">${old.map(row).join('')}</div>
    <p class="upd">Son de "búscala" y salieron hace más de 3 horas: revisa que tu casa todavía tenga esa línea.</p>`;
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
@@ -1101,7 +1104,7 @@ function applyTheme(){document.documentElement.style.background='#000';
 }
 function setView(v){if(v===view)return;view=v;$$('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   history.replaceState(null,'',{res:'#resultados'}[v]||'#picks');applyTheme();SC.scrollTop=0;render(true)}
-function status(){$('#stat').textContent=D?(view==='picks'?`Revisado ${ago(D.meta.generated)} · te avisa al cel`:'Se califica sola con los marcadores oficiales'):''}
+function status(){$('#stat').textContent=D?(view==='picks'?`Revisado ${ago(D.meta.generated)}`:'Se califica sola con los marcadores oficiales'):''}
 function render(anim){status();const v=$('#view');
   if(!D){v.innerHTML=waiting?`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('clock')}</div><b>Casi listo</b><p>NURI está haciendo su primera revisión en la nube. En unos minutos verás aquí tus picks.</p></div>`:'<p class="upd">Abriendo tus picks…</p>';return}
   const keepQ=document.activeElement&&document.activeElement.id==='fq';
