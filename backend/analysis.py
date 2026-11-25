@@ -107,8 +107,9 @@ def build(p: dict, feed, hist: dict | None = None, book_label: str | None = None
 def _value_points(an: dict, p: dict) -> None:
     pr = an["probs"]
     if p.get("tier") == "S" and pr.get("fair"):
-        an["points"].insert(0, ["pos", f"NURI le da {pct(pr['fair'])} de que pase: el mercado ya lo ve favorito y las "
-                                       f"estadísticas lo confirman."])
+        imp = (1 / p["odds"]) if p.get("odds") else None
+        an["points"].insert(0, ["pos", f"NURI le da {pct(pr['fair'])} de que pase y el momio paga como si fuera "
+                                       f"{pct(imp)}: por eso conviene, sea favorito o no."])
         if pr.get("min_odds"):
             an["points"].append(["info", f"Tómala si tu casa paga {pr['min_odds']:.2f} o más."])
         return

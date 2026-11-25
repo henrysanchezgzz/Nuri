@@ -446,6 +446,11 @@ class PickBook:
                 if p.get("tier") in ("B", "P"):
                     db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
             db.set_setting("retire_conditional_v38", "1")
+        if db.get_setting("retire_v42") is None:
+            for p in db.pending_nuri_picks():     # los de "sólo favoritos" se cambian por el análisis nuevo
+                if p.get("tier") == "S" and p.get("start_ts", 0) > now + 1800:
+                    db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
+            db.set_setting("retire_v42", "1")
         if db.get_setting("retire_v41") is None:
             # una vez: fuera los goleadores de momio largo y los props de análisis hechos con historiales cruzados
             for p in db.pending_nuri_picks():
@@ -588,7 +593,7 @@ class PickBook:
     def _update_sure(self, result: dict, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
         import sure_picks as SP
         try:
-            team = SP.team_candidates(result, feed, now, stats_agreement, self.MIN_LEAD_S, self.HORIZON_S)
+            team = SP.team_candidates(result, feed, now, stats_agreement, self.MIN_LEAD_S, self.HORIZON_S, _for_against)
             pl = SP.prop_candidates(feed, now, self.MIN_LEAD_S, self.HORIZON_S)
         except Exception as exc:
             print(f"[picks] análisis: {type(exc).__name__}: {exc}")
@@ -613,11 +618,13 @@ class PickBook:
             lg = raw.get("league") or e.get("league")
             if s_day.get(day, 0) >= self.MAX_SURE_DAY or s_lg.get((day, lg), 0) >= self.MAX_SURE_LEAGUE_DAY:
                 continue
+            if c["p"] < 0.60:            # LOCK sólo si además pega 6 de cada 10 o más
+                c["conf_score"] = min(c["conf_score"], 79.0)
             lv = SP.level(c["conf_score"])
             stake = self.SURE_STAKE[lv]
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue
-            min_odds = max(SP.MIN_ODDS, round(0.99 / c["p"] + 0.004, 2))
+            min_odds = max(SP.MIN_ODDS, round(1.02 / c["p"] + 0.004, 2))   # desde aquí NURI todavía ve ventaja
             base = {"created_at": now, "tier": "S", "event_id": eid, "espn_id": raw.get("_espn_id"),
                     "league_code": raw.get("_league"), "sport": raw.get("sport"), "league": lg,
                     "home": (raw.get("home") or {}).get("name"), "away": (raw.get("away") or {}).get("name"),
@@ -628,20 +635,21 @@ class PickBook:
             if kind == "t":
                 r = c["row"]
                 why = ", ".join(c["notes"][:3])
-                rec = dict(base, id=f"{r['id']}|S", market_key=r["market_key"], market_type=r["market_type"],
+                rec = dict(base, id=f"{r['id']}|S2", market_key=r["market_key"], market_type=r["market_type"],
                            market_label=r["market_label"], line=r.get("line"), selection=r["selection"],
                            selection_label=r["selection_label"], book=c["book"],
-                           reason=f"El mercado ya lo ve favorito ({round(c['p_mkt'] * 100)}%) y las estadísticas lo "
-                                  f"confirman: {why}.")
+                           reason=f"El análisis de NURI le da {round(c['p_model'] * 100)}% y el casino lo paga como si "
+                                  f"fuera {round(100 / c['odds'])}%." + (f" A favor: {why}." if why else ""))
             else:
                 pr = c["pr"]
                 side_txt = "Más" if c["side"] == "over" else "Menos"
-                rec = dict(base, id=f"{eid}|sprop2:{pr['stat']}:{pr['athlete']}|{c['side']}",
+                rec = dict(base, id=f"{eid}|sprop3:{pr['stat']}:{pr['athlete']}|{c['side']}",
                            market_key=f"prop:{pr['stat']}:{pr['athlete']}:{pr['line']:g}", market_type="prop",
                            market_label=c["player"], line=pr["line"], selection=c["side"],
                            selection_label=f"{side_txt} de {pr['line']:g} {pr['label']}", book=None,
-                           reason=f"{'La pasó' if c['side'] == 'over' else 'Se quedó abajo'} en {c['hits']} de sus "
-                                  f"últimos {c['n']} y promedia {c['avg5']:.1f} en los últimos 5.")
+                           reason=f"Con su historial NURI le da {round(c['p_model'] * 100)}% y el momio paga como "
+                                  f"{round(100 / c['odds'])}%. {'La pasó' if c['side'] == 'over' else 'Se quedó abajo'} "
+                                  f"en {c['hits']} de sus últimos {c['n']} y promedia {c['avg5']:.1f} en los últimos 5.")
             if db.add_nuri_pick(rec):
                 taken.add(eid)
                 s_day[day] = s_day.get(day, 0) + 1

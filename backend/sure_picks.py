@@ -1,17 +1,20 @@
 """
 NURI · sure_picks.py — PICKS DE ANÁLISIS (tier "S")
 ====================================================
-Picks de alta probabilidad hechos con análisis deportivo, no con cazar cuotas:
-  · el mercado (DraftKings sin comisión) ya da como favorito ese resultado, y
-  · las estadísticas reales lo confirman (forma, diferencia de goles/puntos, bajas, modelo de ESPN,
-    enfrentamientos, local/visita; en jugadores: cuántas veces pasó la línea, su promedio y sus minutos).
-La probabilidad final mezcla las dos cosas. Sólo sale si queda ≥ 66 % y paga 1.40 o más.
+Aquí pesa más el análisis de NURI que el casino: no se va con el favorito por ser favorito.
+  · NURI calcula su propia probabilidad con estadísticas (model.py): 65 % su análisis + 35 % el mercado.
+  · Es pick cuando esa probabilidad dice que el momio paga de más (≥ 5 % de ventaja), sea favorito o no.
+  · Cuidados: momio 1.40–4.50, que el análisis no se aleje absurdamente del mercado (señal de que falta
+    información, p. ej. una baja que no vemos) y datos suficientes.
 """
 from __future__ import annotations
 
-MIN_ODDS = 1.40
-MAX_ODDS = 2.10
-MIN_P = 0.66
+import model as M
+
+MIN_ODDS, MAX_ODDS = 1.40, 4.50
+W_MODEL = 0.65
+MIN_EDGE = 0.05
+MAX_GAP = 0.22
 MARKETS = ("1x2", "ml", "dc", "spread", "ah", "total", "btts")
 
 
@@ -19,41 +22,57 @@ def level(score: float) -> str:
     return "lock" if score >= 80 else "alta" if score >= 68 else "media" if score >= 56 else "baja"
 
 
-def team_candidates(result: dict, feed, now: float, stats_agreement, min_lead: float, horizon: float) -> list[dict]:
+def _conf(p: float, ev: float, extra: float) -> float:
+    return 48 + min(24.0, ev * 150) + (p - 0.5) * 36 + extra
+
+
+def team_candidates(result: dict, feed, now: float, stats_agreement, min_lead: float, horizon: float,
+                    for_against=None) -> list[dict]:
     rows = result.get("rows_index") or {}
-    out = []
+    tps: dict = {}
+    best: dict = {}
     for rid, r in rows.items():
         if r.get("status") != "pre" or r.get("market_type") not in MARKETS:
             continue
-        st = r.get("start_ts") or 0
-        if not (min_lead <= st - now <= horizon):
+        if not (min_lead <= (r.get("start_ts") or 0) - now <= horizon):
+            continue
+        d = (getattr(feed, "dossier", {}) or {}).get(r["event_id"])
+        if not d:
+            continue
+        fam = r["sport"]
+        if r["event_id"] not in tps:
+            tps[r["event_id"]] = M.team_probs(d, fam, for_against)
+        tp = tps[r["event_id"]]
+        pmod = M.prob_for(tp, r["market_type"], r["selection"], r.get("line"))
+        if pmod is None:
             continue
         odds = r.get("ref_odds")
         q = (r.get("quotes") or [None])[0]
         book = None
-        if q and q.get("odds") and q["odds"] >= (odds or 0) - 0.02:       # momio real (Bet365) si existe
+        if q and q.get("odds") and q["odds"] >= (odds or 0) - 0.02:
             odds, book = q["odds"], q.get("book")
         if not odds or not (MIN_ODDS <= odds <= MAX_ODDS):
             continue
         pm = r.get("p") or 0
-        if pm < 0.58 or r.get("confidence") == "baja":
+        if abs(pmod - pm) > MAX_GAP:
             continue
-        d = (getattr(feed, "dossier", {}) or {}).get(r["event_id"])
-        if not d:
-            continue                                    # sin estadísticas no hay análisis
-        fam = r["sport"]
+        p = W_MODEL * pmod + (1 - W_MODEL) * pm
+        ev = p * odds - 1
+        need = MIN_EDGE + (0.03 if tp.get("src", 1) < 2 else 0)
+        if ev < need or p < 0.30 or pmod * odds - 1 < need:
+            continue
         ml = rows.get(f"{r['event_id']}|{'1x2' if fam == 'football' else 'ml'}|{r['selection']}")
         ml_p = ml["p"] if ml else (pm if r["market_type"] in ("1x2", "ml") else None)
         ss, notes = stats_agreement(d, fam, r, ml_p)
-        if ss < 0.30 or len(notes) < 2:
-            continue                                    # las estadísticas tienen que respaldarlo claramente
-        p = min(0.92, pm + 0.07 * ss)
-        if p < MIN_P or p * odds < 0.99:
-            continue
-        score = 50 + (p - MIN_P) * 160 + ss * 14 + min(3, len(notes) - 2) * 2
-        out.append({"row": r, "p": round(p, 4), "p_mkt": pm, "ss": ss, "notes": notes, "odds": round(odds, 2),
-                    "book": book, "conf_score": round(min(score, 92), 1)})
-    out.sort(key=lambda c: -c["conf_score"])
+        if ss < -0.2:
+            continue                                     # las demás estadísticas van en contra
+        c = {"row": r, "p": round(p, 4), "p_mkt": pm, "p_model": round(pmod, 4), "ss": ss, "notes": notes,
+             "odds": round(odds, 2), "book": book, "ev": round(ev, 4), "tp": tp,
+             "conf_score": round(min(_conf(p, ev, ss * 10 + min(2, len(notes)) * 2), 92), 1)}
+        k = r["event_id"]
+        if k not in best or c["conf_score"] > best[k]["conf_score"]:
+            best[k] = c
+    out = sorted(best.values(), key=lambda c: -c["conf_score"])
     return out
 
 
@@ -67,37 +86,37 @@ def prop_candidates(feed, now: float, min_lead: float, horizon: float) -> list[d
         e = (feed.raw or {}).get(eid) or {}
         if e.get("status") != "pre" or not (min_lead <= (e.get("start_ts") or 0) - now <= horizon):
             continue
+        lg = e.get("_league")
         for pr in prs.values():
             po = pr.get("p_over")
             if po is None:
                 continue
-            games = src.games_of(pr["athlete"], e.get("_league"))
-            if not games:
+            games = src.games_of(pr["athlete"], lg)
+            vals = P.gl_values(games, pr["stat"]) if games else []
+            if len(vals) < 8:
                 continue
-            name = src.name_of(pr["athlete"], e.get("_league"))
+            name = src.name_of(pr["athlete"], lg)
             if not name:
                 continue
             for i, side in enumerate(("over", "under")):
                 odds = (pr.get("o_now") or [None, None])[i]
+                if not odds or not (MIN_ODDS <= odds <= 3.5):
+                    continue
                 pm = po if side == "over" else 1 - po
-                if not odds or not (MIN_ODDS <= odds <= MAX_ODDS) or pm < 0.52:
+                pmod = M.prop_prob(vals[:15], pr["line"], side, pr.get("dist") == "poisson")
+                if pmod is None or abs(pmod - pm) > MAX_GAP:
                     continue
-                f = P.form_of(games, pr["stat"], pr["line"], side)
-                if not f or f["n10"] < 7:
+                p = W_MODEL * pmod + (1 - W_MODEL) * pm
+                ev = p * odds - 1
+                if ev < MIN_EDGE or pmod * odds - 1 < MIN_EDGE or p < 0.35:
                     continue
-                vals = P.gl_values(games, pr["stat"])
-                avg5 = sum(vals[:5]) / min(5, len(vals)) if vals else None
-                if avg5 is None or (side == "over" and avg5 <= pr["line"]) or (side == "under" and avg5 >= pr["line"]):
-                    continue
-                hr = (f["hits"] + 1) / (f["n10"] + 2)
-                if f["hits"] / f["n10"] < 0.7:
-                    continue                           # que la haya pasado en al menos 7 de 10
-                p = min(0.90, 0.6 * pm + 0.4 * hr)
-                if p < MIN_P or p * odds < 0.99:
-                    continue
-                score = 50 + (p - MIN_P) * 160 + (f["hits"] / f["n10"] - 0.7) * 40
+                last = vals[:10]
+                hits = sum(1 for x in last if (x > pr["line"] if side == "over" else x < pr["line"]))
+                avg5 = sum(vals[:5]) / 5
+                extra = (hits / len(last) - 0.5) * 16
                 out.append({"event_id": eid, "pr": pr, "player": name, "side": side, "odds": round(odds, 2),
-                            "p": round(p, 4), "hits": f["hits"], "n": f["n10"], "avg5": avg5,
-                            "conf_score": round(min(score, 90), 1), "ev_raw": e})
+                            "p": round(p, 4), "p_mkt": pm, "p_model": round(pmod, 4), "ev": round(ev, 4),
+                            "hits": hits, "n": len(last), "avg5": avg5,
+                            "conf_score": round(min(_conf(p, ev, extra), 90), 1), "ev_raw": e})
     out.sort(key=lambda c: -c["conf_score"])
     return out
