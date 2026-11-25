@@ -446,6 +446,13 @@ class PickBook:
                 if p.get("tier") in ("B", "P"):
                     db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
             db.set_setting("retire_conditional_v38", "1")
+        if db.get_setting("reset_results_v5") is None:
+            # el usuario pidió empezar a contar de cero: lo ya calificado se archiva (no cuenta ni se muestra)
+            for p in db.list_nuri_picks():
+                if p.get("result") not in ("pending",):
+                    db.update_nuri_pick(p["id"], result="retired", units=p.get("units") or 0.0,
+                                        settled_at=p.get("settled_at") or now)
+            db.set_setting("reset_results_v5", str(now))
         if db.get_setting("retire_v43") is None:
             for p in db.pending_nuri_picks():     # se recalculan con criterios más estrictos
                 if p.get("tier") == "S" and p.get("start_ts", 0) > now + 1800:
@@ -591,8 +598,8 @@ class PickBook:
                 print(f"[picks] nuevo goleador · {rec['league']} · {c['player']} @ {c['odds']}")
 
     # ------------------------------------------------------------------ picks de análisis (tier S)
-    MAX_SURE_DAY = 8
-    MAX_SURE_LEAGUE_DAY = 3
+    MAX_SURE_DAY = 12
+    MAX_SURE_LEAGUE_DAY = 4
     SURE_STAKE = {"lock": 0.02, "alta": 0.015, "media": 0.01, "baja": 0.005}
 
     def sure_calibration(self, now: float) -> dict:
@@ -641,9 +648,8 @@ class PickBook:
             lg = raw.get("league") or e.get("league")
             if s_day.get(day, 0) >= self.MAX_SURE_DAY or s_lg.get((day, lg), 0) >= self.MAX_SURE_LEAGUE_DAY:
                 continue
-            if c["p"] < 0.66 or c.get("ss", 0.5) < 0.5:   # LOCK: muy probable Y con las estadísticas claramente a favor
-                c["conf_score"] = min(c["conf_score"], 79.0)
-            lv = SP.level(c["conf_score"])
+            lv = SP.level(c["p"])
+            c["conf_score"] = round(c["p"] * 100, 1)          # la confianza ES la probabilidad
             stake = self.SURE_STAKE[lv]
             if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
                 continue

@@ -11,15 +11,23 @@ from __future__ import annotations
 
 import model as M
 
-MIN_ODDS, MAX_ODDS = 1.40, 4.50
+MIN_ODDS, MAX_ODDS = 1.20, 4.50
+SAFE_ODDS, SAFE_P = 1.40, 0.78   # abajo de 1.40 sólo entra si NURI lo ve en 78 % o más (modo 80 %)
 W_MODEL = 0.65
 MIN_EDGE = 0.05
 MAX_GAP = 0.15        # si el análisis se aleja más que esto del mercado, casi siempre falta información
 MARKETS = ("1x2", "ml", "dc", "spread", "ah", "total", "btts")
 
 
-def level(score: float) -> str:
-    return "lock" if score >= 80 else "alta" if score >= 68 else "media" if score >= 56 else "baja"
+def level(p: float) -> str:
+    """El nivel es la probabilidad: LOCK 80 %+, Alta 70 %+, Media 60 %+, Baja menos."""
+    return "lock" if p >= 0.80 else "alta" if p >= 0.70 else "media" if p >= 0.60 else "baja"
+
+
+def need_edge(odds: float, p: float) -> float | None:
+    if odds < SAFE_ODDS:
+        return 0.02 if p >= SAFE_P else None
+    return MIN_EDGE
 
 
 def _conf(p: float, ev: float, extra: float) -> float:
@@ -58,7 +66,10 @@ def team_candidates(result: dict, feed, now: float, stats_agreement, min_lead: f
             continue
         p = W_MODEL * pmod + (1 - W_MODEL) * pm
         ev = p * odds - 1
-        need = MIN_EDGE + (0.03 if tp.get("src", 1) < 2 else 0)
+        need = need_edge(odds, p)
+        if need is None:
+            continue
+        need += 0.03 if tp.get("src", 1) < 2 else 0
         if ev < need or p < 0.30 or pmod * odds - 1 < need:
             continue
         ml = rows.get(f"{r['event_id']}|{'1x2' if fam == 'football' else 'ml'}|{r['selection']}")
@@ -108,7 +119,8 @@ def prop_candidates(feed, now: float, min_lead: float, horizon: float) -> list[d
                     continue
                 p = W_MODEL * pmod + (1 - W_MODEL) * pm
                 ev = p * odds - 1
-                if ev < MIN_EDGE or pmod * odds - 1 < MIN_EDGE or p < 0.35:
+                need = need_edge(odds, p)
+                if need is None or ev < need or pmod * odds - 1 < need or p < 0.35:
                     continue
                 last = vals[:10]
                 hits = sum(1 for x in last if (x > pr["line"] if side == "over" else x < pr["line"]))

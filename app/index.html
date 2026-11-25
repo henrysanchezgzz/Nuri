@@ -711,6 +711,28 @@ body.ios .pq small,body.ios .ptiles small{text-transform:none;letter-spacing:0;f
 body.ios .lvrow>div,body.ios .lvrow .lv{background:#1c1c1e!important;box-shadow:none!important;border:0!important}
 body.ios .lvc{background:#1c1c1e!important;box-shadow:none!important;border:0!important}
 .cal{display:flex;gap:12px;align-items:center;padding:14px 16px}.cal b{font-size:30px;font-weight:800}.cal span{font-size:13.5px;color:var(--ink-2);line-height:1.4}
+.chips2{display:flex;gap:8px;margin:0 0 14px;overflow-x:auto}
+.chips2 button{flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-size:13.5px;font-weight:600;background:#1c1c1e;color:#fff}
+.chips2 button.sel{background:#fff;color:#000}
+.mine{color:var(--accent);font-weight:700}
+.betbox{padding:16px}
+.bb-h{font-size:13px;color:var(--ink-2);font-weight:600}
+.bb-v{font-size:22px;font-weight:800;margin-top:4px}
+.bb-s{font-size:14px;color:var(--ink-2);margin:4px 0 6px}
+.bb-in{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 12px}
+.bb-in label{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--ink-2);font-weight:600}
+.bb-in input{background:#2c2c2e;border:0;border-radius:12px;padding:12px;color:#fff;font:inherit;font-size:17px;font-weight:700}
+.betbox .btn{width:100%}
+body.ios .betbox .btn:not(.lnk){background:#fff;color:#000;border:0;box-shadow:none}
+.bank{padding:16px 16px 14px}
+.bk-l{font-size:13px;color:var(--ink-2);font-weight:600}
+.bk-v{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:2px 0 10px}
+.bk-g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.bk-g>div{background:#2c2c2e;border-radius:14px;padding:9px 10px}
+.bk-g small{display:block;font-size:12px;color:var(--ink-2);font-weight:600}
+.bk-g b{display:block;font-size:17px;font-weight:800;margin-top:2px}
+.bk-g b.up{color:#30d158}.bk-g b.dn{color:#ff453a}
+.bk-s,.bk-e{font-size:12.5px;color:var(--ink-2);margin:10px 0 0;line-height:1.4}
 
 </style>
 </head>
@@ -718,7 +740,7 @@ body.ios .lvc{background:#1c1c1e!important;box-shadow:none!important;border:0!im
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="jgl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".45" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient></defs></svg>
 <div class="app">
   <header class="hd">
-    <span></span><div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="4.5"/><path d="M32 5v54M5 32h54M15.5 11.5c8.5 9 8.5 32 0 41M48.5 11.5c-8.5 9-8.5 32 0 41" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg><b>NURI</b></div>
+    <span></span><div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M19 9h26v15a13 13 0 0 1-26 0z" fill="currentColor"/><path d="M19 14h-6a7 7 0 0 0 7.5 11M45 14h6a7 7 0 0 1-7.5 11" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M32 13.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#000"/><path d="M29 36h6v8h-6z" fill="currentColor"/><rect x="21" y="44" width="22" height="5.5" rx="2.2" fill="currentColor"/><rect x="17" y="51.5" width="30" height="4.5" rx="2.2" fill="currentColor"/></svg><b>NURI</b></div>
     <button class="rbtn" id="btnSet" aria-label="Ajustes"></button>
   </header>
   <div class="seg seg-main" id="seg"><button data-v="picks" class="on">Picks</button><button data-v="res">Resultados</button></div>
@@ -769,6 +791,7 @@ const weekStart=ts=>{const day=Math.floor((ts+MX)/86400),dow=(day+3)%7;return (d
 const f2=x=>x==null?'—':Number(x).toFixed(2);
 const nn=n=>Number.isInteger(n)?String(n):String(Math.round(n*10)/10);
 const unitsTxt=u=>`${u>=0?'+':'-'}${Math.abs(u).toFixed(1)} ${Math.abs(u)===1?'unidad':'unidades'}`;
+const mx=v=>'$'+Math.round(Math.abs(v)).toLocaleString('es-MX');
 const pesos=v=>(v<0?'-$':'+$')+Math.abs(Math.round(v)).toLocaleString('es-MX');
 
 /* ================= cifrado (igual que cloud/crypto.py) ================= */
@@ -800,7 +823,7 @@ async function load(manual){
   }finally{busy=false}}
 
 /* ================= código ================= */
-const LOGO='<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="4.5"/><path d="M32 5v54M5 32h54M15.5 11.5c8.5 9 8.5 32 0 41M48.5 11.5c-8.5 9-8.5 32 0 41" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg>';
+const LOGO='<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M19 9h26v15a13 13 0 0 1-26 0z" fill="currentColor"/><path d="M19 14h-6a7 7 0 0 0 7.5 11M45 14h6a7 7 0 0 1-7.5 11" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M32 13.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#000"/><path d="M29 36h6v8h-6z" fill="currentColor"/><rect x="21" y="44" width="22" height="5.5" rx="2.2" fill="currentColor"/><rect x="17" y="51.5" width="30" height="4.5" rx="2.2" fill="currentColor"/></svg>';
 function showLock(err){const l=$('#lock');l.classList.remove('hidden');
   l.innerHTML=`<div class="lk-logo">${LOGO}</div><p class="lk-t">NURI</p><p class="lk-s">${err?'Ese código no abre tus picks. Revísalo.':'Escribe tu código'}</p>
   <input id="codeIn" class="code-in" maxlength="14" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
@@ -828,7 +851,7 @@ function action(p){
   if(p.tier==='A')return `En <b>${esc(p.book||'Bet365')}</b> a <b>${f2(p.odds)}</b>`;
   if(isProp(p))return `Búscala en <b>${nn(p.line)}</b> · desde <b>${f2(p.odds)}</b>`;
   return `Búscala en tu casa · desde <b>${f2(p.odds)}</b>`}
-function stake(p){const st=Math.max(p.stake_pct||.01,.005);if(prefs.bank>0)return `Apuesta $${Math.round(prefs.bank*st).toLocaleString('es-MX')}`;
+function stake(p){const st=Math.max(p.stake_pct||.01,.005);if(prefs.bank>0){const cur=prefs.bank+myStats().profit;return `Apuesta $${Math.round(Math.max(cur,0)*st).toLocaleString('es-MX')}`}
   return st<0.012?'Apuesta chica':st<0.022?'Apuesta normal':'Apuesta fuerte'}
 function who(p){return isPlayer(p)?`<div class="who"><b>${esc(p.market_label)}</b><small>${esc(p.home)} vs ${esc(p.away)}</small></div>`
   :`<div class="who teams">${logo(p.home_logo)}<span>${esc(p.home)}</span><i>vs</i><span>${esc(p.away)}</span>${logo(p.away_logo)}</div>`}
@@ -879,7 +902,7 @@ function pickCard(p){const an=p.an;if(!an)return pickCardOld(p);
    <div class="pk2-b"><div class="pk-bet">${esc(p.selection_label)}</div>
     ${quotes(p,an)}${meter(p)}
     ${teaser.length?`<div class="pts mini">${pts(teaser)}</div>`:''}
-    <div class="pk2-f"><span>${esc(stake(p))} · conviene desde ${f2(p.min_odds||p.odds)}</span><span class="more">Análisis${ic('chev')}</span></div></div></div>`}
+    <div class="pk2-f"><span>${bets[p.id]?`<b class="mine">Apostaste ${mx(bets[p.id].amt)}</b>`:esc(stake(p))+' · desde '+f2(p.min_odds||p.odds)}</span><span class="more">Análisis${ic('chev')}</span></div></div></div>`}
 /* ---------- gráficas del análisis ---------- */
 function bars10(s){const v=s.vals||[],L=s.line,over=s.side!=='under',mx=Math.max(L*1.35,...v,1),W=300,H=128,top=14,bw=W/v.length;
   const y=x=>top+(H-top)*(1-x/mx),ly=y(L);
@@ -899,7 +922,7 @@ function predBar(an){const pr=an.pred,T=an.teams;if(!pr||pr.home==null)return ''
 function seasonRows(an){const rows=an.rows||[];if(!rows.length)return '';const T=an.teams;
   return `<div class="ghead">Temporada</div><div class="grp srows"><div class="sr-h"><span>${esc(T.home.short||T.home.name)}</span><span>${esc(T.away.short||T.away.name)}</span></div>
    ${rows.map(r=>`<div class="sr"><b class="${r.better==='home'?'up':''}">${nn(r.home)}</b><span>${esc(r.label)}</span><b class="${r.better==='away'?'up':''}">${nn(r.away)}</b></div>`).join('')}</div>`}
-const LVTXT2={lock:'Todas las señales de NURI coinciden.',alta:'Casi todas las señales a favor.',media:'Hay valor, con menos señales a favor: apuesta más chica.',baja:'Valor justo y pocas señales: apuesta mínima.'};
+const LVTXT2={lock:'NURI lo ve en 80% o más.',alta:'NURI lo ve entre 70% y 80%.',media:'NURI lo ve entre 60% y 70%: apuesta más chica.',baja:'Menos de 60%, pero el momio paga de más: apuesta mínima.'};
 function anSheet(p){const an=p.an,r=RES[p.result]||RES.pending,T=an.teams||{},side=an.pick_side;
   const forms=(T.home&&T.home.form&&T.home.form.length)||(T.away&&T.away.form&&T.away.form.length)?
    `<div class="ghead">Últimos 5</div><div class="grp forms">${formRow(T.home,side==='home')}${formRow(T.away,side==='away')}</div>`:'';
@@ -911,8 +934,22 @@ function anSheet(p){const an=p.an,r=RES[p.result]||RES.pending,T=an.teams||{},si
    ${an.tiles&&an.tiles.length?`<div class="ptiles">${an.tiles.map(([k,v])=>`<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>`:''}
    ${forms}${predBar(an)}${seasonRows(an)}
    <div class="ghead">Análisis</div><div class="pts">${pts(an.points)}</div>
-   <div class="card pk"><div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div></div>
-   <p class="note" style="text-align:center">${esc(r[0])}</p>`)}
+   ${betBox(p)}
+   <p class="note" style="text-align:center">${esc(r[0])}</p>`);wireBet(p)}
+function betBox(p){const b=bets[p.id];
+  if(b){const o=betOutcome(b,p);return `<div class="card betbox"><div class="bb-h">Tu apuesta</div><div class="bb-v">${mx(b.amt)} a ${f2(b.odds)}</div>
+    <div class="bb-s">${o===null?`Si pega ganas ${mx(b.amt*(b.odds-1))}`:o>0?`Ganaste ${mx(o)}`:o<0?`Perdiste ${mx(-o)}`:'Se devolvió'}</div>
+    <button class="btn lnk" id="betDel">Quitar apuesta</button></div>`}
+  if(p.result!=='pending')return '';
+  return `<div class="card betbox"><div class="bb-h">¿Le metiste?</div>
+   <div class="bb-in"><label>Pesos<input id="betAmt" inputmode="decimal" placeholder="100" value="${prefs.lastAmt||''}"></label>
+   <label>Momio<input id="betOdds" inputmode="decimal" value="${f2(p.odds)}"></label></div>
+   <button class="btn" id="betAdd">Registrar apuesta</button></div>`}
+function wireBet(p){const a=$('#betAdd'),d=$('#betDel');
+  if(a)a.onclick=()=>{const amt=parseFloat(($('#betAmt').value||'').replace(',','.')),od=parseFloat(($('#betOdds').value||'').replace(',','.'));
+    if(!(amt>0)||!(od>1))return toast('Pon cuánto le metiste y el momio');
+    bets[p.id]={amt,odds:od,ts:Date.now()};prefs.lastAmt=amt;savePrefs();saveBets();toast('Apuesta registrada');closeSheet();render(true)};
+  if(d)d.onclick=()=>{delete bets[p.id];saveBets();toast('Apuesta quitada');closeSheet();render(true)}}
 function pickCardOld(p){const lv=p.live&&p.live.status==='live';
   const age=cond(p)&&p.created_at?` · salió ${esc(ago(p.created_at))}`:'';
   return `<div class="card pk anim" data-pick="${esc(p.id)}">
@@ -922,12 +959,24 @@ function pickCardOld(p){const lv=p.live&&p.live.status==='live';
    <div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}
    <p class="pk-why">${esc(p.reason||'')}</p></div>`}
+/* ---------- mis apuestas (se guardan en este cel) ---------- */
+let bets=LS.get('nuri-bets',{});const saveBets=()=>LS.set('nuri-bets',bets);
+const RESF={won:1,half_won:.5,push:0,void:0,half_lost:-.5,lost:-1};
+function betOutcome(b,p){if(!p||p.result==='pending'||!(p.result in RESF))return null;const f=RESF[p.result];
+  return f>0?b.amt*(b.odds-1)*f:f<0?b.amt*f:0}
+function myStats(){const ps=allPicks(),byId=Object.fromEntries(ps.map(p=>[p.id,p]));let st={n:0,staked:0,profit:0,won:0,lost:0,pend:0,pendAmt:0};
+  for(const [id,b] of Object.entries(bets)){const o=betOutcome(b,byId[id]);st.n++;
+    if(o===null){st.pend++;st.pendAmt+=b.amt;continue}st.staked+=b.amt;st.profit+=o;if(o>0)st.won++;else if(o<0)st.lost++}
+  return st}
+const FILT=[['all','Todos'],['alta','Alta y Lock'],['lock','Solo Lock']];
+function passFilt(p){const f=prefs.filt||'all',l=lvl(p);return f==='all'||(f==='lock'?l==='lock':(l==='lock'||l==='alta'))}
 function vPicks(){const n=D.nuri,t=now();
-  const all=[...(n.active||[])].sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
+  const all=[...(n.active||[])].filter(passFilt).sort((a,b)=>(LVR[lvl(a)]-LVR[lvl(b)])||(a.start_ts-b.start_ts));
   // los de "búscala" valen mientras tu casa no copie la línea: después de 3 h probablemente ya cambió
   const old=all.filter(p=>cond(p)&&p.created_at&&t-p.created_at>3*3600),act=all.filter(p=>!old.includes(p));
-  let h=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
-   <b>Ahorita no hay picks</b><p>NURI analiza todos los partidos cada pocos minutos. En cuanto encuentre uno bueno, te llega el aviso al cel.</p></div>`;
+  let h=`<div class="chips2">${FILT.map(([k,t])=>`<button data-f="${k}" class="${(prefs.filt||'all')===k?'sel':''}">${t}</button>`).join('')}</div>`;
+  h+=act.length?act.map(pickCard).join(''):`<div class="card anim empty-card"><div class="ico" style="--c:var(--blue)">${ic('shield')}</div>
+   <b>${(prefs.filt||'all')==='all'?'Ahorita no hay picks':'No hay picks con ese filtro'}</b><p>NURI analiza todos los partidos cada pocos minutos. En cuanto encuentre uno bueno, te llega el aviso al cel.</p></div>`;
   if(old.length)h+=`<div class="sec">Pueden haber cambiado</div><div class="card anim">${old.map(row).join('')}</div>
    <p class="upd">Son de "búscala" y salieron hace más de 3 horas: revisa que tu casa todavía tenga esa línea.</p>`;
   if(n.confirming)h+=`<p class="upd">${n.confirming===1?'Hay 1 posible pick en revisión.':`Hay ${n.confirming} posibles picks en revisión.`}</p>`;
@@ -977,10 +1026,17 @@ function verdict(w,all){if(!w.settled)return w.pending?'Todavía no termina ning
     else if(w.clv<-0.005)t+=' El mercado se movió en contra de sus picks: NURI se vuelve más exigente sola.'}
   if((all.settled||0)<30)t+=' Con pocos picks todavía pesa mucho la suerte.';return t}
 function weeks(){const r=D.nuri.report,list=[...(r.weeks||[])],cur=r.this_week;if(!list.length||Math.abs(list[0].start-cur.start)>120)list.unshift(cur);return list}
+function bankCard(){const st=myStats();if(!st.n&&!(prefs.bank>0))return `<div class="card bank anim"><div class="bk-l">Mi banco</div>
+   <p class="bk-e">Abre un pick y registra cuánto le metiste. Aquí vas a ver tu banco, lo que llevas ganado y tu porcentaje de aciertos.</p></div>`;
+  const cur=(prefs.bank||0)+st.profit,roi=st.staked?st.profit/st.staked:0,hr=(st.won+st.lost)?st.won/(st.won+st.lost):null;
+  return `<div class="card bank anim"><div class="bk-l">Mi banco</div><div class="bk-v">${prefs.bank>0?mx(cur):(st.profit>=0?'+':'−')+mx(Math.abs(st.profit))}</div>
+   <div class="bk-g"><div><small>Ganancia</small><b class="${st.profit>=0?'up':'dn'}">${st.profit>=0?'+':'−'}${mx(Math.abs(st.profit))}</b></div>
+    <div><small>Aciertos</small><b>${hr===null?'—':Math.round(hr*100)+'%'}</b></div><div><small>Rendimiento</small><b>${st.staked?(roi>=0?'+':'')+Math.round(roi*100)+'%':'—'}</b></div></div>
+   <p class="bk-s">${st.won} ganadas · ${st.lost} perdidas · ${st.pend} por jugarse${st.pendAmt?` (${mx(st.pendAmt)} en juego)`:''} · apostado ${mx(st.staked)}</p></div>`}
 function vRes(){const W=weeks(),w=W[0],all=D.nuri.report.all_time||{};
   const ps=allPicks().filter(p=>Math.abs(weekStart(p.start_ts)-w.start)<120).sort((a,b)=>b.start_ts-a.start_ts);
   const sub=w.settled?(prefs.bank>0?`Vas ${pesos(money(ps))}`:`Vas ${unitsTxt(w.units||0)}`):(w.pending?'Picks por jugarse':'Sin picks todavía');
-  let h=`<div class="hero anim"><div class="lbl">Esta semana · ganados y perdidos</div><div class="big">${nn(w.won||0)} – ${nn(w.lost||0)}</div><span class="pill">${esc(sub)}</span></div>
+  let h=bankCard()+`<div class="hero anim"><div class="lbl">Picks de NURI esta semana</div><div class="big">${nn(w.won||0)} – ${nn(w.lost||0)}</div><span class="pill">${esc(sub)}</span></div>
    <div class="card anim"><p class="verdict">${esc(verdict(w,all))}</p></div>`;
   const L=D.nuri.report.levels||{},lv=['lock','alta','media','baja'].filter(k=>L[k]&&L[k].settled);
   const C=(D.nuri||{}).cal||{};
@@ -1008,11 +1064,11 @@ function pickSheet(id){const p=allPicks().find(x=>x.id===id);if(!p)return;if(p.a
    <div class="lvline">${badge(p)}<span>${esc(LVTXT[lvl(p)])}</span></div>
    <div class="card pk"><div class="pk-do"><span>${action(p)}</span><span class="stk">${esc(stake(p))}</span></div>
    ${p.tier==='A'&&p.min_odds?`<div class="pk-warn">Si ya bajó de ${f2(p.min_odds)}, mejor no.</div>`:''}<p class="pk-why">${esc(p.reason||'')}</p></div>
-   <p class="note" style="text-align:center">${esc(fin+r[0])}</p>`)}
+   ${betBox(p)}<p class="note" style="text-align:center">${esc(fin+r[0])}</p>`);wireBet(p)}
 function setSheet(){const src=D?Object.entries(D.meta.sources||{}):[];
   openSheet(`<h2>Ajustes</h2>
-  <div class="field">Tu banco en pesos (opcional)<input id="bankIn" inputmode="numeric" placeholder="Ej. 2000" value="${prefs.bank||''}"></div>
-  <p class="note">Con tu banco, cada pick te dice cuánto apostar y los resultados salen en pesos.</p>
+  <div class="field">Con cuánto empezaste tu banco (pesos)<input id="bankIn" inputmode="numeric" placeholder="Ej. 2000" value="${prefs.bank||''}"></div>
+  <p class="note">NURI le suma o resta lo que ganes o pierdas en las apuestas que registres, y te dice cuánto meterle a cada pick.</p>
   <div class="ghead">Cómo elige NURI</div><div class="grp howto">
    <p>NURI hace su propio análisis de cada partido y cada jugador: forma, goles o puntos a favor y en contra, local o visita, bajas, enfrentamientos y el historial partido por partido. Su análisis pesa más que lo que dice el casino.</p>
    <p>Es pick cuando ese análisis dice que el resultado es más probable de lo que paga el momio, sea favorito o no.</p>
@@ -1051,7 +1107,7 @@ function render(anim){status();const v=$('#view');
   const keepQ=document.activeElement&&document.activeElement.id==='fq';
   v.innerHTML=view==='res'?vRes():vPicks();
   if(!anim)$$('.anim',v).forEach(e=>e.classList.remove('anim'));
-  const tf=$('#toFair');if(tf)tf.onclick=()=>setView('fair');
+  $$('[data-f]').forEach(b=>b.onclick=()=>{prefs.filt=b.dataset.f;savePrefs();render(true)});
   const q=$('#fq');if(q){q.oninput=()=>{fq=q.value;$('#flist').innerHTML=fairList()};if(keepQ){q.focus();q.setSelectionRange(q.value.length,q.value.length)}}
   fitBounce()}
 $('#view').addEventListener('click',e=>{const t=e.target.closest('[data-pick],[data-wk]');if(!t)return;
