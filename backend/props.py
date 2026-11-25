@@ -378,12 +378,13 @@ class PropsSource:
 
     def __init__(self, state: dict | None = None):
         st = state or {}
-        self.names: dict[str, list] = st.get("names") or {}        # id → [nombre, equipo_id, ts]
+        # OJO: el id de atleta de ESPN se repite entre deportes → todo va con la liga: "nba:3995"
+        self.names: dict[str, list] = {k: v for k, v in (st.get("names") or {}).items() if ":" in k}
         self.rost_ts: dict[str, float] = st.get("rost_ts") or {}   # equipo → última descarga
         self.hist: dict[str, list] = st.get("hist") or {}          # clave → [línea, ts_del_cambio, ts_visto, ts_primera_vez]
         self.props: dict[str, dict] = {}                           # evento → {clave: prop}
         self.scorers: dict[str, dict] = {}                         # evento (fútbol) → {atleta: {"any", "any_open", "two"}}
-        self.gl: dict[str, dict] = st.get("gl") or {}              # atleta → {"ts", "lg", "games"}
+        self.gl: dict[str, dict] = {k: v for k, v in (st.get("gl") or {}).items() if ":" in k}   # "liga:atleta"
         self.status = {"ok": False, "detail": "sin revisar", "events": 0, "props": 0}
 
     def dump(self) -> dict:
@@ -406,10 +407,10 @@ class PropsSource:
             for a in (grp.get("items") if isinstance(grp, dict) and "items" in grp else [grp]):
                 if isinstance(a, dict) and a.get("id"):
                     pos = a.get("position") or {}
-                    self.names[str(a["id"])] = [a.get("displayName") or a.get("fullName") or "", team_id, now,
+                    self.names[f"{lg}:{a['id']}"] = [a.get("displayName") or a.get("fullName") or "", team_id, now,
                                                 (pos.get("abbreviation") if isinstance(pos, dict) else "") or "",
                                                 str(a.get("jersey") or "")]
-        self.rost_ts[f"r2:{lg}:{team_id}"] = now   # r2: ya guarda número y posición
+        self.rost_ts[f"r3:{lg}:{team_id}"] = now   # r2: ya guarda número y posición
 
     async def refresh(self, feed, now: float | None = None, concurrency: int = 8) -> None:
         """Una pasada: props de los partidos de NBA, NFL y NHL (y goleadores de fútbol) de las próximas 30 h."""
@@ -446,7 +447,7 @@ class PropsSource:
                     else:
                         self.props[e["id"]] = parse_props(items, e["_league"])
                     for tid in (e.get("_home_id"), e.get("_away_id")):   # el id de equipo se repite entre deportes
-                        if tid and now - self.rost_ts.get(f"r2:{lg}:{tid}", 0) > 20 * 3600:
+                        if tid and now - self.rost_ts.get(f"r3:{lg}:{tid}", 0) > 20 * 3600:
                             await self._roster(client, sport, lg, str(tid))
                 except Exception as exc:  # una liga sin props no tumba la corrida
                     errs += 1
@@ -482,12 +483,13 @@ class PropsSource:
         todo, seen = [], set()
         for c in pre:
             a = c["athlete"]
-            if a in seen:
+            lgc0 = (feed.raw.get(c["event_id"]) or {}).get("_league")
+            if (lgc0, a) in seen:
                 continue
-            seen.add(a)
-            g = self.gl.get(a)
+            seen.add((lgc0, a))
+            g = self.gl.get(f"{lgc0}:{a}")
             if not g or now - g.get("ts", 0) > GL_KEEP_S:
-                todo.append((a, (feed.raw.get(c["event_id"]) or {}).get("_league")))
+                todo.append((a, lgc0))
         todo = todo[:limit]
         # picks de análisis: también el historial de los jugadores con línea principal en los partidos más próximos
         extra = []
@@ -497,10 +499,10 @@ class PropsSource:
             lgc = (feed.raw.get(eid) or {}).get("_league")
             for pr in self.props[eid].values():
                 a = pr["athlete"]
-                if a in seen or pr.get("p_over") is None:
+                if (lgc, a) in seen or pr.get("p_over") is None:
                     continue
-                seen.add(a)
-                g = self.gl.get(a)
+                seen.add((lgc, a))
+                g = self.gl.get(f"{lgc}:{a}")
                 if not g or now - g.get("ts", 0) > GL_KEEP_S:
                     extra.append((a, lgc))
         todo += extra[:90]
@@ -515,7 +517,7 @@ class PropsSource:
                     r = await client.get(f"{WEB}/{sport}/{lg}/athletes/{a}/gamelog")
                     if r.status_code != 200:
                         return
-                    self.gl[a] = {"ts": now, "lg": lgc, "games": parse_gamelog(r.json())}
+                    self.gl[f"{lgc}:{a}"] = {"ts": now, "lg": lgc, "games": parse_gamelog(r.json())}
                 except Exception as exc:
                     print(f"[props] historial {a}: {type(exc).__name__}"[:100])
 
@@ -524,24 +526,30 @@ class PropsSource:
                 await asyncio.gather(*(one(a, l) for a, l in todo))
         return len(todo)
 
-    def name_of(self, aid: str) -> str | None:
-        v = self.names.get(str(aid))
+    def name_of(self, aid: str, lg: str) -> str | None:
+        v = self.names.get(f"{lg}:{aid}")
         return v[0] if v else None
 
-    def info_of(self, aid: str) -> dict:
+    def games_of(self, aid: str, lg: str) -> list:
+        return (self.gl.get(f"{lg}:{aid}") or {}).get("games") or []
+
+    def info_of(self, aid: str, lg: str) -> dict:
         """{"name", "team_id", "pos", "num"} del plantel de ESPN (lo que haya)."""
-        v = self.names.get(str(aid)) or []
+        v = self.names.get(f"{lg}:{aid}") or []
         return {"name": v[0] if v else None, "team_id": v[1] if len(v) > 1 else None,
                 "pos": v[3] if len(v) > 3 else "", "num": v[4] if len(v) > 4 else ""}
 
-    def find(self, name: str, team_ids: tuple) -> str | None:
+    def find(self, name: str, team_ids: tuple, lg: str) -> str | None:
         """El id de ESPN de un jugador por su nombre, entre los planteles de los equipos del partido."""
         n = norm(name)
         if not n:
             return None
         last = n.split()[-1]
         cands = []
-        for aid, v in self.names.items():
+        for key, v in self.names.items():
+            lg_, _, aid = key.partition(":")
+            if lg_ != lg:
+                continue
             if len(v) > 1 and str(v[1]) in {str(t) for t in team_ids if t}:
                 m = norm(v[0])
                 if m == n:
@@ -560,7 +568,7 @@ class PropsSource:
                 continue
             inj = (injuries or {}).get(eid) or {}
             for k, pr in props.items():
-                name = self.name_of(pr["athlete"])
+                name = self.name_of(pr["athlete"], e.get("_league"))
                 if not name:
                     continue
                 st = inj.get(name) or inj.get(norm(name))
@@ -571,7 +579,7 @@ class PropsSource:
                 # verla, a más tardar cuando la vimos por primera vez (o la hora de ESPN, si es antes)
                 changed_at = h[1] or min(pr["updated"] or now, h[3] if len(h) > 3 else now)
                 fresh = now - changed_at <= FRESH_S
-                games = ((self.gl.get(pr["athlete"]) or {}).get("games")) if use_form else None
+                games = self.games_of(pr["athlete"], e.get("_league")) if use_form else None
                 prx = dict(pr)
                 if games:
                     vals = gl_values(games, pr["stat"])
@@ -682,7 +690,7 @@ def real_candidates(src, feed, now: float) -> list[dict]:
                 stat = io_stat(fam, r.get("stat"))
                 if not stat:
                     continue
-                aid = src.find(r["name"], (e.get("_home_id"), e.get("_away_id")))
+                aid = src.find(r["name"], (e.get("_home_id"), e.get("_away_id")), e.get("_league"))
                 pr = dk.get(f"{stat}:{aid}") if aid else None
                 if not pr or pr.get("p_over") is None:
                     continue
@@ -691,7 +699,7 @@ def real_candidates(src, feed, now: float) -> list[dict]:
                     continue                       # línea muy distinta: no se extrapola
                 if r.get("over") and r.get("under") and 1 / r["over"] + 1 / r["under"] < 1.0:
                     continue                       # el par paga más de 100 %: casi siempre es un dato malo
-                games = (src.gl.get(aid) or {}).get("games")
+                games = src.games_of(aid, e.get("_league"))
                 for side in ("over", "under"):
                     o = r.get(side)
                     if not o or not (1.4 <= o <= 3.6):
@@ -712,7 +720,7 @@ def real_candidates(src, feed, now: float) -> list[dict]:
                         conf += 8 if form["hr"] >= 0.7 else 4 if form["hr"] >= 0.6 else -8 if form["hr"] <= 0.4 else 0
                     hrs = (e.get("start_ts", now) - now) / 3600
                     conf += 3 if hrs <= 4 else (-3 if hrs >= 24 else 0)
-                    out.append({"event_id": eid, "athlete": aid, "player": src.name_of(aid) or r["name"], "stat": stat,
+                    out.append({"event_id": eid, "athlete": aid, "player": src.name_of(aid, e.get("_league")) or r["name"], "stat": stat,
                                 "label": pr["label"], "line": r["line"], "side": side, "odds": o, "book": book,
                                 "p": round(p, 4), "ev": round(ev, 4), "dk_line": pr["line"], "form": form,
                                 "conf_score": round(min(conf, 88.0), 1), "ev_raw": e})

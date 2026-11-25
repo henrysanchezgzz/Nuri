@@ -192,7 +192,7 @@ def attach_players(games: list[dict], feed) -> None:
         pl = []
         for pr in ((getattr(src, "props", {}) or {}).get(g["id"]) or {}).values():
             po = pr.get("p_over")
-            name = src.name_of(pr["athlete"])
+            name = src.name_of(pr["athlete"], ((getattr(feed, "raw", {}) or {}).get(g["id"]) or {}).get("_league"))
             if po is None or not name or not (0.12 <= po <= 0.88):
                 continue
             for side, p in (("Más", po), ("Menos", 1 - po)):

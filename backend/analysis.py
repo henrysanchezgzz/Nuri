@@ -126,8 +126,8 @@ def _scorer(an: dict, p: dict, e: dict, d: dict, feed) -> None:
     name = p.get("market_label") or ""
     an["kind"] = "player"
     src = getattr(feed, "props_src", None)
-    aid = src.find(name, (e.get("_home_id"), e.get("_away_id"))) if src else None
-    info = src.info_of(aid) if (src and aid) else {}
+    aid = src.find(name, (e.get("_home_id"), e.get("_away_id")), e.get("_league")) if src else None
+    info = src.info_of(aid, e.get("_league")) if (src and aid) else {}
     side = _side_of_team(e, info.get("team_id"))
     lead = None
     for s in ("home", "away"):
@@ -191,7 +191,7 @@ def _prop(an: dict, p: dict, e: dict, d: dict, feed) -> None:
     if not k or not src:
         return
     stat, aid, line = k
-    info = src.info_of(aid)
+    info = src.info_of(aid, e.get("_league"))
     side = _side_of_team(e, info.get("team_id"))
     t = an["teams"].get(side) if side else {}
     fam = e.get("sport") or ""
@@ -201,7 +201,7 @@ def _prop(an: dict, p: dict, e: dict, d: dict, feed) -> None:
                     "num": info.get("num") or "", "color": (t or {}).get("color"), "alt": (t or {}).get("alt"),
                     "logo": (t or {}).get("logo")}
     an["pick_side"] = side
-    games = ((src.gl.get(aid) or {}).get("games")) or []
+    games = src.games_of(aid, e.get("_league"))
     vals = P.gl_values(games, stat)
     over = p.get("selection") == "over"
     if vals:

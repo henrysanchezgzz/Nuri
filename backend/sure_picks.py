@@ -71,10 +71,10 @@ def prop_candidates(feed, now: float, min_lead: float, horizon: float) -> list[d
             po = pr.get("p_over")
             if po is None:
                 continue
-            games = (src.gl.get(pr["athlete"]) or {}).get("games")
+            games = src.games_of(pr["athlete"], e.get("_league"))
             if not games:
                 continue
-            name = src.name_of(pr["athlete"])
+            name = src.name_of(pr["athlete"], e.get("_league"))
             if not name:
                 continue
             for i, side in enumerate(("over", "under")):

@@ -102,7 +102,7 @@ def dk_names(feed, eid: str) -> dict:
     from espn_facts import norm_person
     out = {}
     for aid, d in dk.items():
-        nm = src.name_of(aid) if src else None
+        nm = src.name_of(aid, ((getattr(feed, "raw", {}) or {}).get(eid) or {}).get("_league")) if src else None
         if nm and d.get("any"):
             out[norm_person(nm)] = {"name": nm, "odds": d["any"]}
     return out

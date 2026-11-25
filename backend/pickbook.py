@@ -446,6 +446,12 @@ class PickBook:
                 if p.get("tier") in ("B", "P"):
                     db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
             db.set_setting("retire_conditional_v38", "1")
+        if db.get_setting("retire_v41") is None:
+            # una vez: fuera los goleadores de momio largo y los props de análisis hechos con historiales cruzados
+            for p in db.pending_nuri_picks():
+                if p.get("market_type") == "scorer" or "|sprop:" in p["id"]:
+                    db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
+            db.set_setting("retire_v41", "1")
         cands = [c for c in self.candidates(result, feed, now) if self.CONDITIONAL or c["tier"] != "B"]
         alive = {c["row"]["id"] for c in cands}
         for k in [k for k in self.seen if k not in alive and "|scorer:" not in k]:
@@ -630,7 +636,7 @@ class PickBook:
             else:
                 pr = c["pr"]
                 side_txt = "Más" if c["side"] == "over" else "Menos"
-                rec = dict(base, id=f"{eid}|sprop:{pr['stat']}:{pr['athlete']}|{c['side']}",
+                rec = dict(base, id=f"{eid}|sprop2:{pr['stat']}:{pr['athlete']}|{c['side']}",
                            market_key=f"prop:{pr['stat']}:{pr['athlete']}:{pr['line']:g}", market_type="prop",
                            market_label=c["player"], line=pr["line"], selection=c["side"],
                            selection_label=f"{side_txt} de {pr['line']:g} {pr['label']}", book=None,
