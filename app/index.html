@@ -736,6 +736,12 @@ body.ios .betbox .btn:not(.lnk){background:#fff;color:#000;border:0;box-shadow:n
 .filt{display:flex;justify-content:center;gap:22px;margin:-4px 0 14px}
 .filt button{border:0;background:none;padding:4px 0;font:inherit;font-size:14px;font-weight:600;color:rgba(235,235,245,.45)}
 .filt button.sel{color:#fff;box-shadow:inset 0 -2px 0 #fff}
+/* la hoja del pick sólo se desliza hacia arriba y abajo */
+.sheet{overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y}
+.sheet>*{max-width:100%}
+.sh-hero,.ph{overflow:hidden;max-width:100%}
+.pchart{overflow:hidden}
+.pchart svg{overflow:hidden}
 
 </style>
 </head>
