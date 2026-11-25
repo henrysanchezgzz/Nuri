@@ -446,6 +446,11 @@ class PickBook:
                 if p.get("tier") in ("B", "P"):
                     db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
             db.set_setting("retire_conditional_v38", "1")
+        if db.get_setting("retire_v43") is None:
+            for p in db.pending_nuri_picks():     # se recalculan con criterios más estrictos
+                if p.get("tier") == "S" and p.get("start_ts", 0) > now + 1800:
+                    db.update_nuri_pick(p["id"], result="retired", units=0.0, settled_at=now)
+            db.set_setting("retire_v43", "1")
         if db.get_setting("retire_v42") is None:
             for p in db.pending_nuri_picks():     # los de "sólo favoritos" se cambian por el análisis nuevo
                 if p.get("tier") == "S" and p.get("start_ts", 0) > now + 1800:
@@ -618,7 +623,7 @@ class PickBook:
             lg = raw.get("league") or e.get("league")
             if s_day.get(day, 0) >= self.MAX_SURE_DAY or s_lg.get((day, lg), 0) >= self.MAX_SURE_LEAGUE_DAY:
                 continue
-            if c["p"] < 0.60:            # LOCK sólo si además pega 6 de cada 10 o más
+            if c["p"] < 0.66 or c.get("ss", 0.5) < 0.5:   # LOCK: muy probable Y con las estadísticas claramente a favor
                 c["conf_score"] = min(c["conf_score"], 79.0)
             lv = SP.level(c["conf_score"])
             stake = self.SURE_STAKE[lv]
@@ -635,7 +640,7 @@ class PickBook:
             if kind == "t":
                 r = c["row"]
                 why = ", ".join(c["notes"][:3])
-                rec = dict(base, id=f"{r['id']}|S2", market_key=r["market_key"], market_type=r["market_type"],
+                rec = dict(base, id=f"{r['id']}|S3", market_key=r["market_key"], market_type=r["market_type"],
                            market_label=r["market_label"], line=r.get("line"), selection=r["selection"],
                            selection_label=r["selection_label"], book=c["book"],
                            reason=f"El análisis de NURI le da {round(c['p_model'] * 100)}% y el casino lo paga como si "
@@ -643,7 +648,7 @@ class PickBook:
             else:
                 pr = c["pr"]
                 side_txt = "Más" if c["side"] == "over" else "Menos"
-                rec = dict(base, id=f"{eid}|sprop3:{pr['stat']}:{pr['athlete']}|{c['side']}",
+                rec = dict(base, id=f"{eid}|sprop4:{pr['stat']}:{pr['athlete']}|{c['side']}",
                            market_key=f"prop:{pr['stat']}:{pr['athlete']}:{pr['line']:g}", market_type="prop",
                            market_label=c["player"], line=pr["line"], selection=c["side"],
                            selection_label=f"{side_txt} de {pr['line']:g} {pr['label']}", book=None,

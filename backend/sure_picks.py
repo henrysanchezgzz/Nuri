@@ -14,7 +14,7 @@ import model as M
 MIN_ODDS, MAX_ODDS = 1.40, 4.50
 W_MODEL = 0.65
 MIN_EDGE = 0.05
-MAX_GAP = 0.22
+MAX_GAP = 0.15        # si el análisis se aleja más que esto del mercado, casi siempre falta información
 MARKETS = ("1x2", "ml", "dc", "spread", "ah", "total", "btts")
 
 
@@ -23,7 +23,7 @@ def level(score: float) -> str:
 
 
 def _conf(p: float, ev: float, extra: float) -> float:
-    return 48 + min(24.0, ev * 150) + (p - 0.5) * 36 + extra
+    return 46 + min(14.0, ev * 80) + (p - 0.5) * 50 + extra
 
 
 def team_candidates(result: dict, feed, now: float, stats_agreement, min_lead: float, horizon: float,
