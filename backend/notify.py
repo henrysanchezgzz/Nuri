@@ -115,6 +115,13 @@ class Notifier:
                    f"({self._stake_word(p)}).")
             self.queue(f"{pre}Prop · {p['league']}", msg, priority=5 if p.get("conf") == "lock" else 4)
             return
+        if p["tier"] == "S":
+            head = (f"{p['market_label']}: {p['selection_label']}" if p.get("market_type") == "prop"
+                    else f"{p['selection_label']} · {p['market_label']}")
+            msg = (f"{head}\n{when}\nMomio aprox. {p['odds']:.2f}; tómala si tu casa paga {p['min_odds']:.2f} o más "
+                   f"({self._stake_word(p)}).")
+            self.queue(f"{pre}{p['league']}", msg, priority=5 if p.get("conf") == "lock" else 4)
+            return
         if p["tier"] == "A":
             price = f"{book} la paga {p['odds']:.2f}. Si ya bajó de {p['min_odds']:.2f}, no la tomes."
         else:

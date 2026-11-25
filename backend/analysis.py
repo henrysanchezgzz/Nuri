@@ -68,7 +68,7 @@ def _side_of_team(e: dict, team_id) -> str | None:
 
 def _probs(p: dict, book_label: str | None) -> dict:
     fair = p.get("p")
-    odds = p.get("odds") if p.get("book") else None
+    odds = p.get("odds") if (p.get("book") or p.get("tier") == "S") else None
     book = (1 / odds) if odds and odds > 1 else None
     return {"fair": round(fair, 4) if fair else None, "book": round(book, 4) if book else None,
             "book_name": book_label, "odds": odds, "min_odds": p.get("min_odds"),
@@ -106,6 +106,12 @@ def build(p: dict, feed, hist: dict | None = None, book_label: str | None = None
 
 def _value_points(an: dict, p: dict) -> None:
     pr = an["probs"]
+    if p.get("tier") == "S" and pr.get("fair"):
+        an["points"].insert(0, ["pos", f"NURI le da {pct(pr['fair'])} de que pase: el mercado ya lo ve favorito y las "
+                                       f"estadísticas lo confirman."])
+        if pr.get("min_odds"):
+            an["points"].append(["info", f"Tómala si tu casa paga {pr['min_odds']:.2f} o más."])
+        return
     if pr.get("fair") and pr.get("book") and pr.get("odds"):
         an["points"].insert(0, ["pos", f"{pr['book_name']} lo paga a {pr['odds']:.2f}, como si pasara {pct(pr['book'])} "
                                        f"de las veces. NURI calcula {pct(pr['fair'])}: lo justo sería "

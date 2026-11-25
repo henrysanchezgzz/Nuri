@@ -464,6 +464,8 @@ class PickBook:
         for c in cands:
             r = c["row"]
             rid = r["id"]
+            if c["tier"] == "A" and (r["p"] < 0.62 or (c.get("odds") or 0) < 1.40):
+                continue   # cuota mal puesta sólo cuenta si el pick es casi seguro (≥ 62 % y paga 1.40+)
             self.seen.setdefault(rid, now)
             if r["event_id"] in taken_events or (c["tier"] == "B" and self.quiet(now)):
                 continue
@@ -506,6 +508,7 @@ class PickBook:
                 print(f"[picks] nuevo pick {c['tier']} · {rec['league']} · {rec['home']} vs {rec['away']} · "
                       f"{rec['selection_label']} @ {rec['odds']}")
         self.confirming = confirming
+        self._update_sure(result, feed, now, existing, per_day, stake_day)
         self._update_scorers(feed, now, existing, per_day, stake_day)
         self._update_real_props(feed, now, existing, per_day, stake_day)
         self._update_props(feed, now, existing, per_day, stake_day)
@@ -515,8 +518,8 @@ class PickBook:
     MAX_SCORERS_DAY = 3
 
     def _update_scorers(self, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
-        if "scorer" in self.disabled:
-            return
+        if "scorer" in self.disabled or os.getenv("NURI_SCORERS", "0") != "1":
+            return   # goleadores: momios largos que pegan 1 de cada 3; NURI ahora va por picks seguros
         import scorers as S
         try:
             cands = S.candidates(feed, now)
@@ -570,6 +573,78 @@ class PickBook:
                 if self.notifier:
                     self.notifier.pick(rec, MX_TZ)
                 print(f"[picks] nuevo goleador · {rec['league']} · {c['player']} @ {c['odds']}")
+
+    # ------------------------------------------------------------------ picks de análisis (tier S)
+    MAX_SURE_DAY = 8
+    MAX_SURE_LEAGUE_DAY = 3
+    SURE_STAKE = {"lock": 0.02, "alta": 0.015, "media": 0.01, "baja": 0.005}
+
+    def _update_sure(self, result: dict, feed, now: float, existing: list, per_day: dict, stake_day: dict) -> None:
+        import sure_picks as SP
+        try:
+            team = SP.team_candidates(result, feed, now, stats_agreement, self.MIN_LEAD_S, self.HORIZON_S)
+            pl = SP.prop_candidates(feed, now, self.MIN_LEAD_S, self.HORIZON_S)
+        except Exception as exc:
+            print(f"[picks] análisis: {type(exc).__name__}: {exc}")
+            return
+        taken = {p["event_id"] for p in existing if p.get("tier") == "S"}
+        s_day: dict[str, int] = {}
+        s_lg: dict[tuple, int] = {}
+        for p in existing:
+            if p.get("tier") == "S":
+                d_ = datetime.fromtimestamp(p["start_ts"] or now, MX_TZ).date().isoformat()
+                s_day[d_] = s_day.get(d_, 0) + 1
+                s_lg[(d_, p["league"])] = s_lg.get((d_, p["league"]), 0) + 1
+        items = [("t", c) for c in team] + [("p", c) for c in pl]
+        items.sort(key=lambda x: -x[1]["conf_score"])
+        for kind, c in items:
+            e = c["row"] if kind == "t" else c["ev_raw"]
+            eid = e["event_id"] if kind == "t" else c["event_id"]
+            raw = (feed.raw or {}).get(eid) or {}
+            if eid in taken:
+                continue
+            day = datetime.fromtimestamp(raw.get("start_ts") or now, MX_TZ).date().isoformat()
+            lg = raw.get("league") or e.get("league")
+            if s_day.get(day, 0) >= self.MAX_SURE_DAY or s_lg.get((day, lg), 0) >= self.MAX_SURE_LEAGUE_DAY:
+                continue
+            lv = SP.level(c["conf_score"])
+            stake = self.SURE_STAKE[lv]
+            if stake_day.get(day, 0.0) + stake > self.MAX_STAKE_DAY:
+                continue
+            min_odds = max(SP.MIN_ODDS, round(0.99 / c["p"] + 0.004, 2))
+            base = {"created_at": now, "tier": "S", "event_id": eid, "espn_id": raw.get("_espn_id"),
+                    "league_code": raw.get("_league"), "sport": raw.get("sport"), "league": lg,
+                    "home": (raw.get("home") or {}).get("name"), "away": (raw.get("away") or {}).get("name"),
+                    "home_logo": (raw.get("home") or {}).get("logo"), "away_logo": (raw.get("away") or {}).get("logo"),
+                    "start_ts": raw.get("start_ts"), "odds": c["odds"], "min_odds": min_odds, "p": c["p"],
+                    "ev": round(c["p"] * c["odds"] - 1, 4), "stake_pct": stake, "conf": lv, "conf_score": c["conf_score"],
+                    "score": c["conf_score"] / 100, "stats_score": c.get("ss", 0.0), "move": None}
+            if kind == "t":
+                r = c["row"]
+                why = ", ".join(c["notes"][:3])
+                rec = dict(base, id=f"{r['id']}|S", market_key=r["market_key"], market_type=r["market_type"],
+                           market_label=r["market_label"], line=r.get("line"), selection=r["selection"],
+                           selection_label=r["selection_label"], book=c["book"],
+                           reason=f"El mercado ya lo ve favorito ({round(c['p_mkt'] * 100)}%) y las estadísticas lo "
+                                  f"confirman: {why}.")
+            else:
+                pr = c["pr"]
+                side_txt = "Más" if c["side"] == "over" else "Menos"
+                rec = dict(base, id=f"{eid}|sprop:{pr['stat']}:{pr['athlete']}|{c['side']}",
+                           market_key=f"prop:{pr['stat']}:{pr['athlete']}:{pr['line']:g}", market_type="prop",
+                           market_label=c["player"], line=pr["line"], selection=c["side"],
+                           selection_label=f"{side_txt} de {pr['line']:g} {pr['label']}", book=None,
+                           reason=f"{'La pasó' if c['side'] == 'over' else 'Se quedó abajo'} en {c['hits']} de sus "
+                                  f"últimos {c['n']} y promedia {c['avg5']:.1f} en los últimos 5.")
+            if db.add_nuri_pick(rec):
+                taken.add(eid)
+                s_day[day] = s_day.get(day, 0) + 1
+                s_lg[(day, lg)] = s_lg.get((day, lg), 0) + 1
+                per_day[day] = per_day.get(day, 0) + 1
+                stake_day[day] = stake_day.get(day, 0.0) + stake
+                if self.notifier:
+                    self.notifier.pick(rec, MX_TZ)
+                print(f"[picks] nuevo pick de análisis · {lg} · {rec['market_label']} · {rec['selection_label']} @ {rec['odds']}")
 
     # ------------------------------------------------------------------ props con momio real (Caliente / Codere)
     MAX_REAL_PROPS_DAY = 10
@@ -950,7 +1025,7 @@ class PickBook:
             if p["result"] == "pending":
                 try:   # análisis completo (quién juega, números reales, por qué conviene)
                     import analysis
-                    item["an"] = analysis.build(p, feed, self.hist, item["book"])
+                    item["an"] = analysis.build(p, feed, self.hist, "Momio" if p.get("tier") == "S" else item["book"])
                 except Exception as exc:
                     print(f"[análisis] {p['id']}: {type(exc).__name__}: {exc}")
                 current.append(item)

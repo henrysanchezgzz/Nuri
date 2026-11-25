@@ -489,7 +489,22 @@ class PropsSource:
             if not g or now - g.get("ts", 0) > GL_KEEP_S:
                 todo.append((a, (feed.raw.get(c["event_id"]) or {}).get("_league")))
         todo = todo[:limit]
-        sem = asyncio.Semaphore(6)
+        # picks de análisis: también el historial de los jugadores con línea principal en los partidos más próximos
+        extra = []
+        evs = sorted(((e.get("start_ts") or 0, eid) for eid, e in (feed.raw or {}).items()
+                      if eid in self.props and e.get("status") == "pre" and 0 < (e.get("start_ts") or 0) - now < 30 * 3600))
+        for _, eid in evs:
+            lgc = (feed.raw.get(eid) or {}).get("_league")
+            for pr in self.props[eid].values():
+                a = pr["athlete"]
+                if a in seen or pr.get("p_over") is None:
+                    continue
+                seen.add(a)
+                g = self.gl.get(a)
+                if not g or now - g.get("ts", 0) > GL_KEEP_S:
+                    extra.append((a, lgc))
+        todo += extra[:90]
+        sem = asyncio.Semaphore(8)
 
         async def one(a, lgc):
             if lgc not in LEAGUES:

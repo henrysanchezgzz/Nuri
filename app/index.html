@@ -783,6 +783,7 @@ const LV={lock:['LOCK','l-lock'],alta:['Alta','l-alta'],media:['Media','l-media'
 const lvl=p=>p.conf&&LV[p.conf]?p.conf:(p.tier==='A'?(p.ev>=0.09?'alta':'media'):'media');
 function badge(p){const l=lvl(p);return `<span class="bdg ${LV[l][1]}">${l==='lock'?ic('lock'):''}${LV[l][0]}</span>`}
 function action(p){
+  if(p.tier==='S')return `Momio aprox. <b>${f2(p.odds)}</b> · tómala si paga <b>${f2(p.min_odds)}</b> o más`;
   if(p.tier==='A')return `En <b>${esc(p.book||'Bet365')}</b> a <b>${f2(p.odds)}</b>`;
   if(isProp(p))return `Búscala en <b>${nn(p.line)}</b> · desde <b>${f2(p.odds)}</b>`;
   return `Búscala en tu casa · desde <b>${f2(p.odds)}</b>`}
@@ -821,7 +822,10 @@ function hero(p,an){const pl=an&&an.player,T=(an&&an.teams)||{};
    <div class="ph-vs"><div class="tm${side==='home'?' sel':''}">${crest(h)}<b>${esc(h.name||p.home)}</b></div><i>vs</i>
     <div class="tm${side==='away'?' sel':''}">${crest(w)}<b>${esc(w.name||p.away)}</b></div></div></div>`}
 function quotes(p,an){const pr=(an&&an.probs)||{};
-  return `<div class="pq"><div><small>${esc(p.book||'Casa')}</small><b>${f2(p.odds)}</b></div>
+  if(p.tier==='S')return `<div class="pq"><div><small>Momio aprox.</small><b>${f2(p.odds)}</b></div>
+   <div class="ev"><small>Probabilidad</small><b>${Math.round((p.p||0)*100)}%</b></div>
+   <div><small>Tómala desde</small><b>${f2(p.min_odds||p.odds)}</b></div></div>`;
+  return `<div class="pq"><div><small>${esc(p.tier==='S'?'Momio aprox.':(p.book||'Casa'))}</small><b>${f2(p.odds)}</b></div>
    <div><small>Lo justo</small><b>${pr.fair_odds?f2(pr.fair_odds):'—'}</b></div>
    <div class="ev"><small>Ventaja</small><b>${pr.edge!=null?(pr.edge>=0?'+':'')+Math.round(pr.edge*100)+'%':'—'}</b></div></div>`}
 function meter(p){const l=lvl(p),n={baja:1,media:2,alta:3,lock:4}[l];
