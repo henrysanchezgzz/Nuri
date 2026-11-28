@@ -1,0 +1,31 @@
+{
+ "ok": true,
+ "started": 1795889371.249749,
+ "steps": [
+  "[estado] abierto · última corrida hace 6 min",
+  "[ESPN] 229 partidos · 165 resúmenes · 245 ok / 0 errores",
+  "[props] 1391 líneas de jugadores en 29 partidos · 716 goleadores en 33 partidos de fútbol",
+  "[motor] 204 partidos · 2858 selecciones analizadas",
+  "[goleadores] partidos con primer goleador y anota de Bet365: 26 · candidatos 14",
+  "[picks] activos 14 · calificados ahora 0 · confirmando 0 · props candidatos 31",
+  "[avisos] enviados 0 · pendientes 0",
+  "[listo] 6.9 s · datos 54 KB"
+ ],
+ "version": "5.1.3",
+ "espn": {
+  "ok": 245,
+  "err": 0,
+  "events": 229,
+  "summaries": 165
+ },
+ "props": {
+  "events": 29,
+  "props": 1391,
+  "errors": 0
+ },
+ "analyzed": {
+  "events": 204,
+  "selections": 2858
+ },
+ "finished": 1795889378.157554
+}
